@@ -46,6 +46,8 @@
 
 **评估工具（Stage 2.5，部分完成）**：`scripts/run_eval.py` 在 1–3 颗芯片、2–3 条 X/Y 线的小拓扑上生成确定性的随机增删 net 工作负载，对比纯 Steiner 与有界重排，统计成功率、移动/搜索状态、预算遗漏、参照一致率以及短接/线独占违规。参照会穷举移除至多两个既有 net 的组合及重路由顺序；它只在相同局部重排邻域内穷举，仍使用 Steiner 建路，不是全局最优参照。
 
+**V5 对标规模软件评估（Stage 2.5，部分完成）**：`v5-scale` 从随仓库保存的参考资料读取 12 颗芯片的尺寸与角色，构造 288 条独占线、1,536 个交叉点和 64 个外部端点，重复执行相同的确定性工作负载来比较普通 Steiner 与有界重排。面包板行映射、`SF_I`–`SF_L` 端点和双通道链路都标记为 **`verified:false`**；这只是在假设接线上的软件规模证据，不代表 V5 硬件容量或硬件验证。详见 [`docs/routing/scale-eval.md`](docs/routing/scale-eval.md)。
+
 **MCU 夹持区与真实场景（Block 1）**：可选的两排 MCU clip zone 把 MCU pin 映射为独立逻辑节点，并提供 ESP32/Blue Pill 外设组合的可执行场景。设计、schema、来源与实测结果见 [`docs/routing/scenarios.md`](docs/routing/scenarios.md)。两排夹点和适配器次序均为 **`verified:false`** 的设计假设，不代表真实硬件已经确认。
 
 **当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 的重排只是少量 net 上的有界搜索，重路由仍采用贪心 Steiner 近似，不是全局最优算法，也不提供 Clos 网络的可重排保证。除非完整资源图的连通性等廉价不变量能够证明不可达，预算内失败只报告“未找到”，不声称硬件拓扑绝对不可路由。
@@ -61,7 +63,7 @@
 | **Stage 1.6** | **真实拓扑路由**：在交叉点资源图上实现确定性多跳 Steiner 近似（基于最短路） | ✅ 已完成 |
 | **Block 1** | **MCU 场景层**：两排逻辑夹持区、确定性器件放置、9 个来源可追溯的路由场景（硬件假设未验证） | ✅ 软件完成 |
 | **Stage 2** | **有界局部重排**：blocking probe 排序，默认至多重路由三个既有 net，以连接集合差 `C_move` 限制改动；尚非全局最优 | 🚧 部分完成 |
-| **Stage 2.5** | **评估**：小规模确定性工作负载与两-net 局部邻域穷举参照；不声称全局最优                         | 🚧 部分完成 |
+| **Stage 2.5** | **评估**：小规模参照加 V5 对标资源规模的确定性安全/时限评估；假设接线均未硬件验证，不声称全局最优 | 🚧 部分完成 |
 | **Stage 3** | **硬件映射**：映射到 CH446Q 开关状态，由本地 MCU 做供电/电流安全检查并可回退               | 📅 计划中 |
 
 > 三级 Clos 的重排上界等理论结论只作方法参考；在硬件拓扑被证明满足条件前，不套用其数值。
@@ -93,6 +95,9 @@ python3 scripts/coverage_report.py
 
 # 确定性小拓扑评估（JSON 含参照一致率；短接计数必须为 0）
 python3 scripts/run_eval.py --seed 7 --trials 20 --out out/eval.json
+
+# V5 对标资源规模评估（假设接线；报告与计时分离）
+python3 scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json --max-seconds 30
 ```
 
 `small_topology` 会在每条 X 线上挂接一个节点，因此跨芯片路径可能需要把中继芯片上的节点也加入 net。
@@ -110,6 +115,8 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/steiner.py   确定性多跳 Steiner 近似与 xbar 状态
   routing/rearrange.py Stage 2 有界局部重排与 C_move 统计
   routing/eval.py      Stage 2.5 确定性评估与局部穷举参照
+  routing/v5_scale.py  未验证接线的 V5 对标资源规模拓扑
+  routing/scale_eval.py 规模工作负载、安全断言与双路由回放
   routing/scenarios.py 场景 schema、确定性放置与 MCU-zone 适配器
   routing/cli.py       route 子命令
 docs/routing/          概览 / 模型 / CLI 文档
@@ -117,6 +124,7 @@ examples/routing/      状态文件与 MCU/外设路由场景
 tests/                 标准库 unittest
 scripts/coverage_report.py  行覆盖率报告（要求 100%）
 scripts/run_eval.py         小拓扑评估 JSON 生成器
+scripts/run_scale_eval.py   对标规模评估 JSON 与独立计时生成器
 .github/workflows/ci.yml    Python 3.11 + 3.13 CI
 ```
 

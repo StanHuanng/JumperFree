@@ -17,6 +17,9 @@ jobs:
         run: python -m unittest discover -s tests -t . -v
       - name: Coverage (must be 100%)
         run: python scripts/coverage_report.py
+      - name: Timed V5-scale software evaluation
+        timeout-minutes: 1
+        run: python scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json --max-seconds 30
       - name: CLI smoke
         run: |
           python -m jumperfree route init --nodes 8 --seed 7
