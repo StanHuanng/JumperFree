@@ -40,7 +40,9 @@
 
 **交叉点资源图（Stage 1.5）**：新增参数化的 X/Y 线资源图，把节点接线和芯片间链路建模为固定边，把芯片内交叉点建模为可控边；芯片线由单一 net 独占，并可检查闭合交叉点是否造成跨 net 短接。它是通用逻辑模型，不包含 CH446Q 寄存器或 SPI 驱动。
 
-**当前局限（如实说明）**：stage 1 使用**全连接**仿真图——任意两节点之间都有直连 link，所以还没有多跳路径、中继节点或真实开关矩阵的阻塞问题，也**没有重排（rearrange）**。「任意两点可按需连通」不等于「所有多组连接都能无限制同时成立」，后者需要具体开关拓扑、容量与电气约束的证明或测试。
+**多跳 Steiner 路由（Stage 1.6）**：从编号最小的成员开始，反复以确定性的 0/1 代价最短路（固定接线代价 0、每个新闭合交叉点代价 1）把最近的未连接成员接到当前树上。跨芯片固定链路两端和同线节点按真实电气连接一起占用；每次成功后再运行短接检查。
+
+**当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 模型虽支持多跳和阻塞，但采用贪心 Steiner 近似，不保证全局最优，也**不会重排（rearrange）**既有 net。因此 `NO_FREE_PATH` 只表示当前空闲资源中未找到路径，并非证明硬件拓扑绝对不可路由。
 
 ---
 
@@ -50,7 +52,7 @@
 | :---------- | :----------------------------------------------------------------------------------------- | :------- |
 | **Stage 1** | **软件路由**：N 节点模型、net 增删查、隔离、原子创建、结构化错误                            | ✅ 已完成 |
 | **Stage 1.5** | **确认对标规模**：已记录 Jumperless 节点计数口径（物理插孔 ≠ 独立电气节点；参考资料，未硬件验证） | ✅ 已完成 |
-| **Stage 1.6** | **真实拓扑路由**：在已完成的交叉点资源图上实现多跳 Steiner 近似（基于最短路） | 📅 计划中 |
+| **Stage 1.6** | **真实拓扑路由**：在交叉点资源图上实现确定性多跳 Steiner 近似（基于最短路） | ✅ 已完成 |
 | **Stage 2** | **有界局部重排**：冲突检测 + 局部换路，以改动连接数 `C_move` 为主代价，超限明确返回“未找到” | 📅 计划中 |
 | **Stage 2.5** | **评估**：小规模拓扑穷举参照，统计成功率、耗时、重排次数；错误短接必须为 0                  | 📅 计划中 |
 | **Stage 3** | **硬件映射**：映射到 CH446Q 开关状态，由本地 MCU 做供电/电流安全检查并可回退               | 📅 计划中 |
@@ -71,10 +73,18 @@ python3 -m jumperfree route query
 python3 -m jumperfree route delete --net NET_1
 python3 -m jumperfree route list
 
+# 多跳交叉点资源图（独立状态文件 out/crossbar-state.json）
+python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
+python3 -m jumperfree route xbar create --net LONG --nodes N0,N4,N11
+python3 -m jumperfree route xbar query --net LONG
+python3 -m jumperfree route xbar delete --net LONG
+
 # 测试与 100% 行覆盖率（标准库 trace）
 python3 -m unittest discover -s tests -t .
 python3 scripts/coverage_report.py
 ```
+
+`small_topology` 会在每条 X 线上挂接一个节点，因此跨芯片路径可能需要把中继芯片上的节点也加入 net。
 
 状态默认保存在 `out/routing-state.json`，可用 `--state PATH` 指定。
 
@@ -86,6 +96,7 @@ python3 scripts/coverage_report.py
 jumperfree/            包入口（python3 -m jumperfree）
   routing/model.py     路由模型：状态、建网、删网、查询、错误码
   routing/crossbar.py  参数化交叉点资源图、拓扑验证与短接检查
+  routing/steiner.py   确定性多跳 Steiner 近似与 xbar 状态
   routing/cli.py       route 子命令
 docs/routing/          概览 / 模型 / CLI 文档
 examples/routing/      状态文件示例

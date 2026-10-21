@@ -25,3 +25,9 @@ jobs:
           python -m jumperfree route query
           python -m jumperfree route delete --net NET_1
           python -m jumperfree route list
+      - name: Crossbar CLI smoke
+        run: |
+          python -m jumperfree route xbar init --topology small --chips 3 --x-lines 2 --y-lines 2
+          python -m jumperfree route xbar create --net SPAN --nodes N0,N2,N5
+          python -m jumperfree route xbar query --net SPAN
+          python -m jumperfree route xbar delete --net SPAN
