@@ -65,6 +65,7 @@ def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     xbar_create.add_argument("--rearrange", action="store_true")
     xbar_create.add_argument("--max-moves", type=int, default=8)
     xbar_create.add_argument("--max-states", type=int, default=2000)
+    xbar_create.add_argument("--max-rip-nets", type=int, default=3)
 
     xbar_delete = xbar_commands.add_parser("delete", help="delete a crossbar net")
     xbar_delete.add_argument("--net", required=True)
@@ -142,6 +143,7 @@ def _run_crossbar(
                 nodes,
                 max_moves=args.max_moves,
                 max_states=args.max_states,
+                max_rip_nets=args.max_rip_nets,
             )
         else:
             state = crossbar_create_net(state, args.net, nodes)

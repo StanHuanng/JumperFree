@@ -21,12 +21,14 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--max-moves", type=int, default=8)
     parser.add_argument("--max-states", type=int, default=2000)
+    parser.add_argument("--max-rip-nets", type=int, default=3)
     args = parser.parse_args()
     report = run_evaluation(
         seed=args.seed,
         trials=args.trials,
         max_moves=args.max_moves,
         max_states=args.max_states,
+        max_rip_nets=args.max_rip_nets,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

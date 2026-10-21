@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import heapq
 import io
 import json
 import tempfile
@@ -12,7 +13,10 @@ from unittest import mock
 from jumperfree.cli import main
 from jumperfree.routing.crossbar import find_shorts, small_topology
 from jumperfree.routing.model import RouteError
-from jumperfree.routing.rearrange import crossbar_create_net_with_rearrange
+from jumperfree.routing.rearrange import (
+    _rank_candidate_nets,
+    crossbar_create_net_with_rearrange,
+)
 from jumperfree.routing.steiner import crossbar_create_net, crossbar_init_state
 
 
@@ -24,7 +28,200 @@ def blocked_state(*, with_side_net: bool = False) -> dict[str, object]:
     return state
 
 
+def redundant_fixed_link_topology() -> dict[str, object]:
+    topology = small_topology(chips=2, x_lines=2, y_lines=3, links_per_pair=0)
+    topology["inter_chip_links"] = [
+        [["C0", "Y", 0], ["C1", "Y", 0]],
+        [["C0", "Y", 2], ["C1", "Y", 2]],
+        [["C0", "Y", 2], ["C1", "Y", 0]],
+        [["C0", "Y", 0], ["C1", "Y", 2]],
+    ]
+    return topology
+
+
+def three_link_blocked_state() -> dict[str, object]:
+    topology = small_topology(chips=4, x_lines=3, y_lines=3, links_per_pair=1)
+    state = crossbar_init_state(topology)
+    for net_id, nodes in (
+        ("a", ["N0", "N1"]),
+        ("b", ["N3", "N4"]),
+        ("c", ["N6", "N7"]),
+    ):
+        state = crossbar_create_net(state, net_id, nodes)
+    return state
+
+
 class RearrangeTests(unittest.TestCase):
+    def test_three_link_blockers_require_k3(self) -> None:
+        state = three_link_blocked_state()
+        snapshot = copy.deepcopy(state)
+        requested = ["N2", "N5", "N8", "N9"]
+
+        with self.assertRaises(RouteError):
+            crossbar_create_net(state, "new", requested)
+        with self.assertRaises(RouteError) as caught:
+            crossbar_create_net_with_rearrange(
+                state,
+                "new",
+                requested,
+                max_moves=21,
+                max_states=7,
+                max_rip_nets=2,
+            )
+        self.assertEqual(caught.exception.details["resource_reason"], "RESOURCE_EXHAUSTED")
+        self.assertEqual(caught.exception.details["states_explored"], 6)
+
+        routed, stats = crossbar_create_net_with_rearrange(
+            state, "new", requested, max_moves=21, max_states=7
+        )
+        self.assertEqual(stats, {
+            "moves": 21,
+            "rearrange_attempted": True,
+            "rearranged_nets": ["a", "b", "c"],
+            "states_explored": 7,
+        })
+        self.assertEqual(state, snapshot)
+        self.assertEqual(
+            {net_id: net["nodes"] for net_id, net in routed["nets"].items()},
+            {
+                "new": requested,
+                "a": ["N0", "N1"],
+                "b": ["N3", "N4"],
+                "c": ["N6", "N7"],
+            },
+        )
+        points = [point for net in routed["nets"].values() for point in net["crosspoints"]]
+        assignments = {name: net["nodes"] for name, net in routed["nets"].items()}
+        self.assertEqual(find_shorts(routed["topology"], points, assignments), [])
+
+    def test_blocker_rank_beats_lexicographic_order(self) -> None:
+        topology = small_topology(chips=2, x_lines=3, y_lines=2, links_per_pair=1)
+        state = crossbar_create_net(
+            crossbar_init_state(topology), "z_blocker", ["N0", "N1"]
+        )
+        state = crossbar_create_net(state, "a_side", ["N4", "N5"])
+
+        naive_first = copy.deepcopy(state)
+        del naive_first["nets"]["a_side"]
+        with self.assertRaises(RouteError):
+            crossbar_create_net(naive_first, "new", ["N2", "N3"])
+
+        routed, stats = crossbar_create_net_with_rearrange(
+            state, "new", ["N2", "N3"], max_moves=7, max_states=1
+        )
+        self.assertIn("new", routed["nets"])
+        self.assertEqual(stats, {
+            "moves": 7,
+            "rearrange_attempted": True,
+            "rearranged_nets": ["z_blocker"],
+            "states_explored": 1,
+        })
+
+    def test_probe_keeps_zero_score_candidates(self) -> None:
+        topology = small_topology(chips=2, x_lines=3, y_lines=2, links_per_pair=1)
+        state = crossbar_create_net(
+            crossbar_init_state(topology), "z_blocker", ["N0", "N1"]
+        )
+        state = crossbar_create_net(state, "a_side", ["N4", "N5"])
+        snapshot = copy.deepcopy(state)
+
+        # z_blocker's Y0 line and its fixed partner occupy the relaxed path.
+        # a_side is off that path, but the advisory probe must not discard it.
+        self.assertEqual(
+            _rank_candidate_nets(state, ["N3", "N2"]),
+            ["z_blocker", "a_side"],
+        )
+        self.assertEqual(state, snapshot)
+
+    def test_probe_union_handles_redundant_and_out_of_order_fixed_links(self) -> None:
+        state = crossbar_init_state(redundant_fixed_link_topology())
+
+        # Parallel links first share a component, then require a root swap and
+        # finally repeat an already-united pair.
+        self.assertEqual(_rank_candidate_nets(state, ["N0", "N2"]), [])
+
+    def test_probe_discards_stale_dijkstra_entries(self) -> None:
+        state = crossbar_init_state(
+            small_topology(chips=2, x_lines=2, y_lines=1)
+        )
+        real_pop = heapq.heappop
+        stale_entry: tuple[int, int, tuple[str, str, str, int]] | None = None
+        popped_stale: list[tuple[int, int, tuple[str, str, str, int]]] = []
+
+        def pop_with_stale(queue):
+            nonlocal stale_entry
+            if stale_entry is None and len(queue) > 1:
+                occupied, hops, current = real_pop(queue)
+                stale_entry = (occupied + 1, hops + 1, current)
+                heapq.heappush(queue, stale_entry)
+                return occupied, hops, current
+            entry = real_pop(queue)
+            if entry == stale_entry:
+                popped_stale.append(entry)
+            return entry
+
+        with mock.patch(
+            "jumperfree.routing.rearrange.heapq.heappop", side_effect=pop_with_stale
+        ):
+            self.assertEqual(_rank_candidate_nets(state, ["N0", "N2"]), [])
+        self.assertEqual(len(popped_stale), 1)
+
+    def test_rip_limit_validation_and_budget_boundaries(self) -> None:
+        blocked = three_link_blocked_state()
+        snapshot = copy.deepcopy(blocked)
+        requested = ["N2", "N5", "N8", "N9"]
+
+        for value in (-1, True, 1.5, "3", None):
+            with self.subTest(value=value), self.assertRaises(RouteError) as caught:
+                crossbar_create_net_with_rearrange(
+                    blocked, "new", requested, max_rip_nets=value  # type: ignore[arg-type]
+                )
+            self.assertEqual(caught.exception.code, "INVALID_REARRANGE_BUDGET")
+
+        with mock.patch(
+            "jumperfree.routing.rearrange._rank_candidate_nets"
+        ) as rank, mock.patch(
+            "jumperfree.routing.rearrange.crossbar_create_net", wraps=crossbar_create_net
+        ) as route:
+            with self.assertRaises(RouteError) as caught:
+                crossbar_create_net_with_rearrange(
+                    blocked, "new", requested, max_rip_nets=0
+                )
+        rank.assert_not_called()
+        self.assertEqual(route.call_count, 1)
+        self.assertEqual(caught.exception.details["states_explored"], 0)
+
+        for limits, explored in (
+            ({"max_states": 6, "max_moves": 21}, 6),
+            ({"max_states": 7, "max_moves": 20}, 7),
+        ):
+            with self.subTest(limits=limits), self.assertRaises(RouteError) as caught:
+                crossbar_create_net_with_rearrange(
+                    blocked, "new", requested, **limits
+                )
+            self.assertEqual(caught.exception.details["states_explored"], explored)
+            self.assertEqual(blocked, snapshot)
+
+        roomy, stats = crossbar_create_net_with_rearrange(
+            blocked,
+            "new",
+            requested,
+            max_moves=21,
+            max_states=7,
+            max_rip_nets=99,
+        )
+        self.assertIn("new", roomy["nets"])
+        self.assertEqual(stats["states_explored"], 7)
+
+        ordinary, stats = crossbar_create_net_with_rearrange(
+            crossbar_init_state(small_topology(chips=1, x_lines=2, y_lines=1)),
+            "new",
+            ["N0", "N1"],
+            max_rip_nets=0,
+        )
+        self.assertIn("new", ordinary["nets"])
+        self.assertIs(stats["rearrange_attempted"], False)
+
     def test_plain_failure_is_rearranged_once_with_exact_move_count(self) -> None:
         state = blocked_state(with_side_net=True)
         snapshot = copy.deepcopy(state)
@@ -208,6 +405,23 @@ class RearrangeCliTests(unittest.TestCase):
             ])
             self.assertEqual(code, 0)
             self.assertEqual(payload["rearrange"]["moves"], 7)  # type: ignore[index]
+
+    def test_cli_forwards_max_rip_nets(self) -> None:
+        for arguments, expected in (([], 3), (["--max-rip-nets", "1"], 1)):
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "state.json"
+                path.write_text(json.dumps(blocked_state()), encoding="utf-8")
+                with mock.patch(
+                    "jumperfree.routing.cli.crossbar_create_net_with_rearrange",
+                    wraps=crossbar_create_net_with_rearrange,
+                ) as rearrange:
+                    code, _ = self.invoke([
+                        "route", "xbar", "create", "--net", "new",
+                        "--nodes", "N2,N3", "--rearrange", "--max-moves", "7",
+                        "--state", str(path), *arguments,
+                    ])
+                self.assertEqual(code, 0)
+                self.assertEqual(rearrange.call_args.kwargs["max_rip_nets"], expected)
 
 
 if __name__ == "__main__":
