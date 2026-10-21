@@ -1,9 +1,14 @@
 """Deterministic evaluation harness for the small crossbar routers.
 
-The reference used here is deliberately local: it exhausts every choice of at
-most two existing nets to rip up and every ordering in which those nets and the
-new net can be greedily re-routed.  It is not an exhaustive search over switch
-settings and therefore does not claim global optimality.
+Two reference oracles are used:
+
+* ``exhaustive_reference`` — local neighborhood: rip at most two existing nets,
+  permute re-route order, each route uses the Steiner approximation.  Explicitly
+  not a global optimum over switch settings.
+* ``true_exhaustive_feasible`` — on tiny single-chip topologies only
+  (``x_lines * y_lines <= 6``, assignment size ``len(nets)+1 <= 3``), enumerate
+  every subset of closed crosspoints and check multi-net connectivity, shorts,
+  and exclusive-line ownership.  Returns ``None`` when the instance is too large.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import random
 from itertools import combinations, permutations, product
 from typing import Any, Callable, Iterable, Sequence
 
-from .crossbar import build_resource_graph, find_shorts, small_topology
+from .crossbar import ResourceGraph, Vertex, build_resource_graph, find_shorts, small_topology
 from .model import RouteError
 from .rearrange import crossbar_create_net_with_rearrange
 from .steiner import crossbar_create_net, crossbar_delete_net, crossbar_init_state
@@ -21,6 +26,8 @@ from .steiner import crossbar_create_net, crossbar_delete_net, crossbar_init_sta
 REFERENCE_MAX_NODES = 8
 REFERENCE_MAX_NETS = 4
 REFERENCE_MAX_RIPPED_NETS = 2
+TRUE_EXHAUSTIVE_MAX_CROSSPOINTS = 6
+TRUE_EXHAUSTIVE_MAX_ASSIGNMENT_NETS = 3
 _REFERENCE_CANDIDATE_FAILURES = {
     "NET_ALREADY_EXISTS",
     "NODES_ALREADY_IN_OTHER_NET",
@@ -94,6 +101,126 @@ def exhaustive_reference(
     return False
 
 
+def _fixed_node_closure(seeds: Sequence[str], graph: ResourceGraph) -> set[str]:
+    adjacency: dict[Vertex, list[Vertex]] = {vertex: [] for vertex in graph.vertices}
+    for left, right in graph.fixed_edges:
+        adjacency[left].append(right)
+        adjacency[right].append(left)
+    seen: set[Vertex] = set()
+    stack: list[Vertex] = list(seeds)
+    while stack:
+        vertex = stack.pop()
+        if vertex in seen:
+            continue
+        seen.add(vertex)
+        stack.extend(adjacency[vertex])
+    return {vertex for vertex in seen if isinstance(vertex, str)}
+
+
+def _component_roots(
+    graph: ResourceGraph, closed: Sequence[Sequence[object]]
+) -> dict[Vertex, Vertex]:
+    """Union-find roots under fixed edges plus ``closed`` crosspoints."""
+
+    # Delegate crosspoint validation to find_shorts by probing with empty nets
+    # first when closed is non-empty; for the roots walk, trust enumerated points.
+    parent = {vertex: vertex for vertex in graph.vertices}
+
+    def find(vertex: Vertex) -> Vertex:
+        while parent[vertex] != vertex:
+            parent[vertex] = parent[parent[vertex]]
+            vertex = parent[vertex]
+        return vertex
+
+    closed_edges = []
+    for value in closed:
+        left, right = (value[0], "X", value[1]), (value[0], "Y", value[2])
+        edge = (left, right) if left <= right else (right, left)
+        closed_edges.append(edge)
+    for left, right in (*graph.fixed_edges, *sorted(closed_edges, key=str)):
+        root_left, root_right = find(left), find(right)
+        if root_left != root_right:
+            parent[root_right] = root_left
+    return {vertex: find(vertex) for vertex in graph.vertices}
+
+
+def _config_feasible(
+    graph: ResourceGraph,
+    closed: Sequence[Sequence[object]],
+    assignments: dict[str, list[str]],
+) -> bool:
+    # find_shorts validates crosspoints and reports multi-net electrical shorts;
+    # component separation among assigned nodes also implies exclusive-line
+    # ownership cannot overlap for those nets.
+    if find_shorts(graph, closed, assignments):
+        return False
+    roots = _component_roots(graph, closed)
+    for members in assignments.values():
+        if not members:
+            continue
+        root = roots[members[0]]
+        if any(roots[node] != root for node in members[1:]):
+            return False
+    return True
+
+
+def true_exhaustive_feasible(
+    state: dict[str, Any], net_id: str, nodes: Iterable[str]
+) -> bool | None:
+    """Return whether any switch config realizes the multi-net assignment.
+
+    Returns ``None`` when the instance exceeds the tiny-topology bounds
+    (single chip, ``x_lines * y_lines <= 6``, ``len(nets) + 1 <= 3``).  Does not
+    rip existing nets: the target is existing nets unchanged plus the new net.
+    """
+
+    topology = state["topology"]
+    chips = topology["chips"]
+    if len(chips) != 1:
+        return None
+    chip = chips[0]
+    crosspoint_count = int(chip["x_lines"]) * int(chip["y_lines"])
+    if crosspoint_count > TRUE_EXHAUSTIVE_MAX_CROSSPOINTS:
+        return None
+    if len(state["nets"]) + 1 > TRUE_EXHAUSTIVE_MAX_ASSIGNMENT_NETS:
+        return None
+
+    supplied = list(nodes)
+    if not all(isinstance(node, str) for node in supplied):
+        return False
+    members = sorted(set(supplied))
+    attachments = topology["node_attachments"]
+    if len(members) < 2:
+        return False
+    if any(node not in attachments for node in members):
+        return False
+    if not isinstance(net_id, str) or not net_id.strip() or net_id in state["nets"]:
+        return False
+    occupied = {node for net in state["nets"].values() for node in net["nodes"]}
+    if occupied.intersection(members):
+        return False
+
+    graph = build_resource_graph(topology)
+    fixed_nodes = _fixed_node_closure(members, graph)
+    if fixed_nodes - set(members):
+        return False
+
+    assignments = {name: list(net["nodes"]) for name, net in state["nets"].items()}
+    assignments[net_id] = members
+
+    chip_name = chip["name"]
+    crosspoints = sorted(
+        (chip_name, x_line, y_line)
+        for x_line in range(int(chip["x_lines"]))
+        for y_line in range(int(chip["y_lines"]))
+    )
+    for mask in range(1 << len(crosspoints)):
+        closed = [crosspoints[index] for index in range(len(crosspoints)) if mask & (1 << index)]
+        if _config_feasible(graph, closed, assignments):
+            return True
+    return False
+
+
 def check_constraints(state: dict[str, Any]) -> dict[str, int]:
     """Count electrical shorts and violations of exclusive line ownership."""
 
@@ -124,8 +251,16 @@ def aggregate_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
     agreements = sum(
         bool(record["accepted"]) == bool(record["reference"]) for record in compared
     )
+    true_compared = [
+        record for record in records if record.get("true_reference") is not None
+    ]
+    true_agreements = sum(
+        bool(record["accepted"]) == bool(record["true_reference"])
+        for record in true_compared
+    )
     divisor = attempts or 1
     comparison_divisor = len(compared) or 1
+    true_divisor = len(true_compared) or 1
     return {
         "attempts": attempts,
         "success_rate": successes / divisor,
@@ -134,6 +269,7 @@ def aggregate_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "timeouts": 0,
         "budget_misses": sum(bool(record["budget_miss"]) for record in records),
         "timeouts_or_budget_misses": sum(bool(record["budget_miss"]) for record in records),
+        "true_budget_misses": sum(bool(record.get("budget_miss_true")) for record in records),
         "shorts_found": sum(int(record["shorts_found"]) for record in records),
         "line_exclusivity_violations": sum(
             int(record["line_exclusivity_violations"]) for record in records
@@ -141,6 +277,10 @@ def aggregate_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "compared_to_reference": {
             "cases": len(compared),
             "agreement_rate": agreements / comparison_divisor,
+        },
+        "compared_to_true_exhaustive": {
+            "cases": len(true_compared),
+            "agreement_rate": true_agreements / true_divisor,
         },
     }
 
@@ -189,6 +329,7 @@ def _run_router(
         reference = None
         if node_count <= reference_max_nodes and len(state["nets"]) <= reference_max_nets:
             reference = exhaustive_reference(state, net_id, nodes)
+        true_reference = true_exhaustive_feasible(state, net_id, nodes)
         accepted = False
         moves = 0
         states = 0
@@ -213,11 +354,13 @@ def _run_router(
         records.append({
             "accepted": accepted,
             "budget_miss": reference is True and not accepted,
+            "budget_miss_true": true_reference is True and not accepted,
             "line_exclusivity_violations": constraints["line_exclusivity_violations"],
             "moves": moves,
             "reference": reference,
             "shorts_found": constraints["shorts_found"],
             "states": states,
+            "true_reference": true_reference,
         })
     return records
 
@@ -279,10 +422,20 @@ def run_evaluation(
             })
     return {
         "reference": {
-            "description": "exhaustive within its separately bounded two-net rearrangement neighborhood; not a global optimum",
+            "description": (
+                "two oracles: (1) neighborhood exhaustive within a separately "
+                "bounded two-net rip-up/re-route search using Steiner per route; "
+                "(2) true exhaustive over all crosspoint subsets on tiny "
+                "single-chip instances only (x_lines*y_lines<=6, "
+                "assignment nets<=3); neither claims global optimality outside "
+                "those bounds"
+            ),
             "max_existing_nets": reference_max_nets,
             "max_nodes": reference_max_nodes,
             "max_ripped_nets": REFERENCE_MAX_RIPPED_NETS,
+            "true_exhaustive_max_assignment_nets": TRUE_EXHAUSTIVE_MAX_ASSIGNMENT_NETS,
+            "true_exhaustive_max_crosspoints": TRUE_EXHAUSTIVE_MAX_CROSSPOINTS,
+            "true_exhaustive_requires_single_chip": True,
         },
         "results": results,
         "seed": seed,

@@ -28,3 +28,12 @@ net，并限制连接集合对称差 `C_move` 和探索状态数；它不是全�
 - [模型与不变量](model.md)
 - [CLI 命令参考](cli.md)
 
+## 评估参考（eval）
+
+`jumperfree.routing.eval` 使用两类参考，互不替代：
+
+1. **邻域穷举**（`exhaustive_reference`）：至多撕除 2 个既有 net，穷举重布线顺序；每条路由仍用 Steiner 近似。不是开关配置上的全局最优。
+2. **真穷举可行性**（`true_exhaustive_feasible`）：仅在极小实例上启用——单芯片、`x_lines * y_lines <= 6`（至多 64 种交叉点子集）、赋值规模 `len(nets)+1 <= 3`。枚举该芯片全部闭合交叉点子集，检查多 net 连通、短接（`find_shorts`）；过大实例返回 `None`，评测跳过对比。既有 net 的节点集合保持不变（不撕网），只重选开关。
+
+指标同时报告邻域 `compared_to_reference` / `budget_misses`，以及真穷举 `compared_to_true_exhaustive` / `true_budget_misses`。黄金快照见 `tests/routing/fixtures/eval_golden_seed1_trials2.json`。
+
