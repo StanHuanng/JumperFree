@@ -1,0 +1,13 @@
+{
+  "id": "conflicting-pin-placement",
+  "title": "Two terminals on one row",
+  "mcu": {"kind": "test adapter", "pins": {"A": "R0C0", "B": "R0C1"}},
+  "modules": [
+    {"id": "left", "kind": "target", "placement": {"rows": [0]}, "pins": {"A": 0}},
+    {"id": "right", "kind": "target", "placement": {"rows": [0]}, "pins": {"B": 0}}
+  ],
+  "nets": [{"id": "a", "members": ["mcu.A", "left.A"]}, {"id": "b", "members": ["mcu.B", "right.B"]}],
+  "sources": ["https://example.com/test-fixture"],
+  "assumptions": [],
+  "expected": {"routeable": true}
+}

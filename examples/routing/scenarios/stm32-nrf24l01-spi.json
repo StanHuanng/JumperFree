@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "stm32-nrf24l01-spi",
+  "title": "Blue Pill nRF24L01 SPI radio",
+  "topology": {"chips": 2, "x_lines": 16, "y_lines": 24, "links_per_pair": 8, "clip_rows": 2, "clips_per_row": 20, "mcu_links": 16},
+  "mcu": {"kind": "STM32F103 Blue Pill provisional clip adapter", "pins": {"GND": "R0C0", "3V3": "R0C1", "PA5": "R0C2", "PA6": "R0C3", "PA7": "R0C4", "PB0": "R0C5", "PB1": "R0C6"}},
+  "modules": [{"id": "radio", "kind": "nRF24L01+ module", "placement": {"rows": [0, 1, 2, 3, 4, 5, 6]}, "pins": {"GND": 0, "VCC": 1, "SCK": 2, "MISO": 3, "MOSI": 4, "CE": 5, "CSN": 6}}],
+  "nets": [
+    {"id": "ce", "members": ["mcu.PB0", "radio.CE"]},
+    {"id": "csn", "members": ["mcu.PB1", "radio.CSN"]},
+    {"id": "gnd", "members": ["mcu.GND", "radio.GND"]},
+    {"id": "miso", "members": ["mcu.PA6", "radio.MISO"]},
+    {"id": "mosi", "members": ["mcu.PA7", "radio.MOSI"]},
+    {"id": "sck", "members": ["mcu.PA5", "radio.SCK"]},
+    {"id": "v3v3", "members": ["mcu.3V3", "radio.VCC"]}
+  ],
+  "sources": ["https://github.com/nopnop2002/Arduino-STM32-nRF24L01"],
+  "assumptions": ["Dedicated MCU zone verified:false; Blue Pill clip positions are provisional adapter assumptions", "CE=PB0, CSN=PB1, SPI1 SCK=PA5, MISO=PA6, MOSI=PA7 follow the cited project", "IRQ is intentionally unused", "A stable 3.3V supply and local decoupling are external electrical requirements"],
+  "expected": {"routeable": true}
+}

@@ -16,6 +16,12 @@ from .steiner import (
 )
 from .rearrange import crossbar_create_net_with_rearrange
 from .eval import check_constraints, exhaustive_reference, run_evaluation
+from .scenarios import (
+    Scenario,
+    load_scenario,
+    scenario_to_route_requests,
+    scenario_to_topology,
+)
 
 __all__ = [
     "RouteError",
@@ -32,4 +38,8 @@ __all__ = [
     "check_constraints",
     "exhaustive_reference",
     "run_evaluation",
+    "Scenario",
+    "load_scenario",
+    "scenario_to_route_requests",
+    "scenario_to_topology",
 ]

@@ -1,0 +1,10 @@
+{
+  "id": "placement-out-of-range",
+  "title": "Breadboard row outside default profile",
+  "mcu": {"kind": "test adapter", "pins": {"A": "R0C0"}},
+  "modules": [{"id": "target", "kind": "target", "placement": {"rows": [8]}, "pins": {"A": 8}}],
+  "nets": [{"id": "a", "members": ["mcu.A", "target.A"]}],
+  "sources": ["https://example.com/test-fixture"],
+  "assumptions": [],
+  "expected": {"routeable": true}
+}

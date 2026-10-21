@@ -168,6 +168,10 @@ def small_topology(
     *,
     links_per_pair: int = 1,
     node_prefix: str = "N",
+    mcu_zone: bool = False,
+    clip_rows: int = 2,
+    clips_per_row: int = 20,
+    mcu_links: int = 1,
 ) -> dict[str, Any]:
     """Return a deterministic, JSON-compatible topology useful in tests.
 
@@ -185,6 +189,8 @@ def small_topology(
         _invalid("not enough Y lines for the requested inter-chip links")
     if not isinstance(node_prefix, str) or not node_prefix:
         _invalid("node_prefix must be a non-empty string")
+    if not isinstance(mcu_zone, bool):
+        _invalid("mcu_zone must be a boolean")
 
     chip_names = [f"C{index}" for index in range(chips)]
     topology: dict[str, Any] = {
@@ -204,6 +210,51 @@ def small_topology(
             for line in range(links_per_pair)
         ],
     }
+    if mcu_zone:
+        zone_values = (clip_rows, clips_per_row, mcu_links)
+        if any(
+            not isinstance(value, int) or isinstance(value, bool)
+            for value in zone_values
+        ):
+            _invalid("MCU zone dimensions must be integers")
+        if clip_rows != 2 or clips_per_row <= 0 or mcu_links <= 0:
+            _invalid("MCU zone dimensions are out of range")
+        bank_start = links_per_pair if chips > 1 else 0
+        if bank_start + mcu_links > y_lines:
+            _invalid("not enough Y lines for the requested MCU links")
+
+        clip_attachments = {
+            f"MCU_R{row}_C{column}": ["MCU0", "X", row * clips_per_row + column]
+            for row in range(clip_rows)
+            for column in range(clips_per_row)
+        }
+        collisions = sorted(set(topology["node_attachments"]).intersection(clip_attachments))
+        if collisions:
+            _invalid("MCU clip node names collide with breadboard nodes", nodes=collisions)
+        topology["chips"].append({
+            "name": "MCU0",
+            "x_lines": clip_rows * clips_per_row,
+            "y_lines": mcu_links,
+        })
+        topology["node_attachments"].update(clip_attachments)
+        topology["inter_chip_links"].extend(
+            [["MCU0", "Y", line], ["C0", "Y", bank_start + line]]
+            for line in range(mcu_links)
+        )
+        topology["mcu_zone"] = {
+            "clip_rows": clip_rows,
+            "clips_per_row": clips_per_row,
+            "chip": "MCU0",
+            "axis": "X",
+        }
+        topology["metadata"] = {
+            "hardware_assumptions": [{
+                "id": "dedicated_mcu_clip_zone",
+                "verified": False,
+                "description": "Two clip rows outside breadboard; independent routable clips",
+            }],
+            "model": "logical_simulation",
+        }
     validate_topology(topology)
     return topology
 

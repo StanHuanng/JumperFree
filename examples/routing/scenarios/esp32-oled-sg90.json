@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "esp32-oled-sg90",
+  "title": "ESP32 OLED and SG90 servo",
+  "topology": {"chips": 2, "x_lines": 16, "y_lines": 24, "links_per_pair": 8, "clip_rows": 2, "clips_per_row": 20, "mcu_links": 16},
+  "mcu": {"kind": "ESP32 DevKit provisional clip adapter", "pins": {"GND": "R0C0", "3V3": "R0C1", "5V": "R0C2", "GPIO22": "R0C3", "GPIO21": "R0C4", "GPIO18": "R0C5"}},
+  "modules": [
+    {"id": "oled", "kind": "SSD1306 I2C 4-pin", "placement": {"row_range": [0, 7]}, "pins": {"GND": {"offset": 0}, "VCC": {"offset": 1}, "SCL": {"offset": 2}, "SDA": {"offset": 3}}},
+    {"id": "servo", "kind": "SG90", "placement": {"rows": [8, 9, 10]}, "pins": {"GND": 8, "VCC": 9, "SIG": 10}},
+    {"id": "power", "kind": "external dual-rail supply connector", "placement": {"rows": [12, 13, 14]}, "pins": {"GND": 12, "3V3": 13, "5V": 14}}
+  ],
+  "nets": [
+    {"id": "gnd", "members": ["mcu.GND", "oled.GND", "servo.GND", "power.GND"]},
+    {"id": "v3v3", "members": ["mcu.3V3", "oled.VCC", "power.3V3"]},
+    {"id": "v5", "members": ["mcu.5V", "servo.VCC", "power.5V"]},
+    {"id": "scl", "members": ["mcu.GPIO22", "oled.SCL"]},
+    {"id": "sda", "members": ["mcu.GPIO21", "oled.SDA"]},
+    {"id": "servo_pwm", "members": ["mcu.GPIO18", "servo.SIG"]}
+  ],
+  "sources": ["https://randomnerdtutorials.com/esp32-ssd1306-oled-display-arduino-ide/", "https://www.espboards.dev/sensors/sg90/"],
+  "assumptions": [
+    "Dedicated MCU zone verified:false; adapter clip positions are provisional",
+    "SG90 is modeled as GND/VCC/SIG and GPIO18 is a design choice",
+    "OLED front means inclusive breadboard rows 0..7",
+    "External regulated supply; MCU power clips are inputs; no second supply is connected",
+    "Servo uses 5V, OLED uses 3.3V, grounds are common, and current suitability is unverified"
+  ],
+  "expected": {"routeable": true}
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "stm32-relay",
+  "title": "Blue Pill single relay module",
+  "topology": {"chips": 2, "x_lines": 16, "y_lines": 24, "links_per_pair": 8, "clip_rows": 2, "clips_per_row": 20, "mcu_links": 16},
+  "mcu": {"kind": "STM32F103 Blue Pill provisional clip adapter", "pins": {"GND": "R0C0", "5V": "R0C1", "PB0": "R0C2"}},
+  "modules": [{"id": "relay", "kind": "driven single relay module", "placement": {"rows": [0, 1, 2]}, "pins": {"GND": 0, "VCC": 1, "IN": 2}}],
+  "nets": [
+    {"id": "gnd", "members": ["mcu.GND", "relay.GND"]},
+    {"id": "relay_in", "members": ["mcu.PB0", "relay.IN"]},
+    {"id": "v5", "members": ["mcu.5V", "relay.VCC"]}
+  ],
+  "sources": ["https://wiki.seeedstudio.com/Grove-Relay/"],
+  "assumptions": ["Dedicated MCU zone verified:false; Blue Pill clip positions are provisional adapter assumptions", "PB0 is a project GPIO choice", "A driven relay module is modeled, not a bare coil; contact-side load wiring is external", "The exact module input threshold, isolation, supply, and current requirements remain to be verified"],
+  "expected": {"routeable": true}
+}
