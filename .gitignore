@@ -6,3 +6,4 @@ qa/
 *.egg-info/
 build/
 dist/
+.qa-tmp/

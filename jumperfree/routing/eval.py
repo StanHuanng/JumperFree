@@ -42,12 +42,17 @@ def _plain_router(
     return crossbar_create_net(state, net_id, nodes), {"moves": 0, "states_explored": 0}
 
 
-def _rearrange_router(max_moves: int, max_states: int) -> Router:
+def _rearrange_router(max_moves: int, max_states: int, max_rip_nets: int) -> Router:
     def route(
         state: dict[str, Any], net_id: str, nodes: Iterable[str]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         return crossbar_create_net_with_rearrange(
-            state, net_id, nodes, max_moves=max_moves, max_states=max_states
+            state,
+            net_id,
+            nodes,
+            max_moves=max_moves,
+            max_states=max_states,
+            max_rip_nets=max_rip_nets,
         )
 
     return route
@@ -223,6 +228,7 @@ def run_evaluation(
     trials: int,
     max_moves: int = 8,
     max_states: int = 2000,
+    max_rip_nets: int = 3,
     reference_max_nodes: int = REFERENCE_MAX_NODES,
     reference_max_nets: int = REFERENCE_MAX_NETS,
 ) -> dict[str, Any]:
@@ -230,7 +236,11 @@ def run_evaluation(
 
     if trials < 0:
         raise ValueError("trials must be non-negative")
-    for name, value in (("max_moves", max_moves), ("max_states", max_states)):
+    for name, value in (
+        ("max_moves", max_moves),
+        ("max_states", max_states),
+        ("max_rip_nets", max_rip_nets),
+    ):
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise RouteError(
                 "INVALID_REARRANGE_BUDGET",
@@ -240,7 +250,7 @@ def run_evaluation(
     rng = random.Random(seed)
     routers = (
         ("steiner", _plain_router),
-        ("rearrange", _rearrange_router(max_moves, max_states)),
+        ("rearrange", _rearrange_router(max_moves, max_states, max_rip_nets)),
     )
     for chips, x_lines, y_lines in product((1, 2, 3), (2, 3), (2, 3)):
         topology = small_topology(chips, x_lines, y_lines)
@@ -269,7 +279,7 @@ def run_evaluation(
             })
     return {
         "reference": {
-            "description": "exhaustive within the same two-net rearrangement neighborhood; not a global optimum",
+            "description": "exhaustive within its separately bounded two-net rearrangement neighborhood; not a global optimum",
             "max_existing_nets": reference_max_nets,
             "max_nodes": reference_max_nodes,
             "max_ripped_nets": REFERENCE_MAX_RIPPED_NETS,

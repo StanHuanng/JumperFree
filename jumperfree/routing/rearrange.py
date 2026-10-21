@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import heapq
 from itertools import combinations
 from typing import Any, Iterable
 
@@ -23,6 +24,82 @@ def _validate_budget(name: str, value: object) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise RouteError("INVALID_REARRANGE_BUDGET", f"{name} must be a non-negative integer")
     return value
+
+
+def _vertex_key(vertex: Vertex) -> tuple[str, str, str, int]:
+    if isinstance(vertex, str):
+        return "node", vertex, "", -1
+    return "line", vertex[0], vertex[1], vertex[2]
+
+
+def _rank_candidate_nets(state: dict[str, Any], members: Iterable[str]) -> list[str]:
+    """Rank nets by occupancy on a cheap relaxed path union for ``members``."""
+
+    graph = build_resource_graph(state["topology"])
+    parent = {vertex: vertex for vertex in graph.vertices}
+
+    def find(vertex: Vertex) -> Vertex:
+        while parent[vertex] != vertex:
+            parent[vertex] = parent[parent[vertex]]
+            vertex = parent[vertex]
+        return vertex
+
+    def union(left: Vertex, right: Vertex) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root == right_root:
+            return
+        if _vertex_key(left_root) > _vertex_key(right_root):
+            left_root, right_root = right_root, left_root
+        parent[right_root] = left_root
+
+    for left, right in graph.fixed_edges:
+        union(left, right)
+
+    component = {vertex: _vertex_key(find(vertex)) for vertex in graph.vertices}
+    owners: dict[tuple[str, str, str, int], set[str]] = {}
+    for existing_id, net in state["nets"].items():
+        for value in net["lines"]:
+            line = tuple(value)
+            owners.setdefault(component[line], set()).add(existing_id)
+
+    adjacency = {key: set() for key in set(component.values())}
+    for left, right in graph.crosspoint_edges:
+        left_component, right_component = component[left], component[right]
+        if left_component != right_component:
+            adjacency[left_component].add(right_component)
+            adjacency[right_component].add(left_component)
+
+    requested = sorted(set(members))
+    source = component[requested[0]]
+    best = {source: (0, 0)}
+    predecessor: dict[tuple[str, str, str, int], tuple[str, str, str, int]] = {}
+    queue = [(0, 0, source)]
+    while queue:
+        occupied, hops, current = heapq.heappop(queue)
+        if best.get(current) != (occupied, hops):
+            continue
+        for neighbor in sorted(adjacency[current]):
+            candidate = (occupied + bool(owners.get(neighbor)), hops + 1)
+            if neighbor in best and best[neighbor] <= candidate:
+                continue
+            best[neighbor] = candidate
+            predecessor[neighbor] = current
+            heapq.heappush(queue, (*candidate, neighbor))
+
+    path_union: set[tuple[str, str, str, int]] = set()
+    for member in requested:
+        current = component[member]
+        while current not in path_union:
+            path_union.add(current)
+            if current == source:
+                break
+            current = predecessor[current]
+
+    scores = {existing_id: 0 for existing_id in state["nets"]}
+    for key in path_union:
+        for existing_id in owners.get(key, ()):
+            scores[existing_id] += 1
+    return sorted(scores, key=lambda existing_id: (-scores[existing_id], existing_id))
 
 
 def _without_nets(state: dict[str, Any], net_ids: Iterable[str]) -> dict[str, Any]:
@@ -72,7 +149,13 @@ def _assert_no_shorts(state: dict[str, Any]) -> None:
         )
 
 
-def _failure(reason: str, max_moves: int, max_states: int, explored: int) -> RouteError:
+def _failure(
+    reason: str,
+    max_moves: int,
+    max_states: int,
+    max_rip_nets: int,
+    explored: int,
+) -> RouteError:
     message = (
         "members are disconnected by invariant topology constraints"
         if reason == "UNROUTABLE_INVARIANT"
@@ -82,6 +165,7 @@ def _failure(reason: str, max_moves: int, max_states: int, explored: int) -> Rou
         "NO_FREE_PATH",
         message,
         max_moves=max_moves,
+        max_rip_nets=max_rip_nets,
         max_states=max_states,
         rearrange_attempted=True,
         resource_reason=reason,
@@ -96,8 +180,9 @@ def crossbar_create_net_with_rearrange(
     *,
     max_moves: int = 8,
     max_states: int = 2000,
+    max_rip_nets: int = 3,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Create a net, moving at most two existing nets within fixed budgets.
+    """Create a net, moving a bounded number of existing nets within budgets.
 
     ``moves`` counts the line and crosspoint symmetric differences of existing
     nets.  The unavoidable resources used by the newly-created net are not a
@@ -106,6 +191,7 @@ def crossbar_create_net_with_rearrange(
 
     move_budget = _validate_budget("max_moves", max_moves)
     state_budget = _validate_budget("max_states", max_states)
+    rip_budget = _validate_budget("max_rip_nets", max_rip_nets)
     supplied = list(nodes)
     try:
         routed = crossbar_create_net(state, net_id, supplied)
@@ -121,24 +207,33 @@ def crossbar_create_net_with_rearrange(
         }
 
     if _topology_separates_members(state, supplied):
-        raise _failure("UNROUTABLE_INVARIANT", move_budget, state_budget, 0)
+        raise _failure(
+            "UNROUTABLE_INVARIANT", move_budget, state_budget, rip_budget, 0
+        )
 
-    if state_budget == 0:
-        raise _failure("RESOURCE_EXHAUSTED", move_budget, state_budget, 0)
+    if state_budget == 0 or rip_budget == 0:
+        raise _failure("RESOURCE_EXHAUSTED", move_budget, state_budget, rip_budget, 0)
 
-    # Generate trials on demand so both routing work and candidate storage stay
-    # bounded.  A candidate's first route is also its blocking-resource probe.
-    candidate_ids = sorted(state["nets"])
+    # The relaxed graph probe is advisory: it ranks likely blockers but never
+    # excludes a net.  Combination generation remains lazy so max_states is a
+    # hard bound on routing trials and their storage.
+    candidate_ids = _rank_candidate_nets(state, supplied)
     explored = 0
-    for size in range(1, min(2, len(candidate_ids)) + 1):
+    for size in range(1, min(rip_budget, len(candidate_ids)) + 1):
         for selected in combinations(candidate_ids, size):
             if explored >= state_budget:
-                raise _failure("RESOURCE_EXHAUSTED", move_budget, state_budget, explored)
+                raise _failure(
+                    "RESOURCE_EXHAUSTED",
+                    move_budget,
+                    state_budget,
+                    rip_budget,
+                    explored,
+                )
             explored += 1
             working = _without_nets(state, selected)
             try:
                 working = crossbar_create_net(working, net_id, supplied)
-                for existing_id in selected:
+                for existing_id in sorted(selected):
                     working = crossbar_create_net(
                         working, existing_id, state["nets"][existing_id]["nodes"]
                     )
@@ -152,7 +247,7 @@ def crossbar_create_net_with_rearrange(
             _assert_no_shorts(working)
             changed = [
                 existing_id
-                for existing_id in selected
+                for existing_id in sorted(selected)
                 if _move_count(state, working, [existing_id])
             ]
             return working, {
@@ -162,4 +257,6 @@ def crossbar_create_net_with_rearrange(
                 "states_explored": explored,
             }
 
-    raise _failure("RESOURCE_EXHAUSTED", move_budget, state_budget, explored)
+    raise _failure(
+        "RESOURCE_EXHAUSTED", move_budget, state_budget, rip_budget, explored
+    )

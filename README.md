@@ -42,7 +42,7 @@
 
 **多跳 Steiner 路由（Stage 1.6）**：从编号最小的成员开始，反复以确定性的 0/1 代价最短路（固定接线代价 0、每个新闭合交叉点代价 1）把最近的未连接成员接到当前树上。跨芯片固定链路两端和同线节点按真实电气连接一起占用；每次成功后再运行短接检查。
 
-**有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，按稳定顺序试移除至多两个候选 net，先路由新 net，再用 Steiner 近似重路由候选 net。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计。
+**有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，以廉价 blocking probe 排序候选，并试移除可配置的至多 K 个既有 net（`--max-rip-nets`，默认 3），先路由新 net，再用 Steiner 近似重路由候选 net。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计；它仍不是全局最优算法。
 
 **评估工具（Stage 2.5，部分完成）**：`scripts/run_eval.py` 在 1–3 颗芯片、2–3 条 X/Y 线的小拓扑上生成确定性的随机增删 net 工作负载，对比纯 Steiner 与有界重排，统计成功率、移动/搜索状态、预算遗漏、参照一致率以及短接/线独占违规。参照会穷举移除至多两个既有 net 的组合及重路由顺序；它只在相同局部重排邻域内穷举，仍使用 Steiner 建路，不是全局最优参照。
 
@@ -60,7 +60,7 @@
 | **Stage 1.5** | **确认对标规模**：已记录 Jumperless 节点计数口径（物理插孔 ≠ 独立电气节点；参考资料，未硬件验证） | ✅ 已完成 |
 | **Stage 1.6** | **真实拓扑路由**：在交叉点资源图上实现确定性多跳 Steiner 近似（基于最短路） | ✅ 已完成 |
 | **Block 1** | **MCU 场景层**：两排逻辑夹持区、确定性器件放置、9 个来源可追溯的路由场景（硬件假设未验证） | ✅ 软件完成 |
-| **Stage 2** | **有界局部重排**：至多重路由两个既有 net，以连接集合差 `C_move` 限制改动；尚非全局最优 | 🚧 部分完成 |
+| **Stage 2** | **有界局部重排**：blocking probe 排序，默认至多重路由三个既有 net，以连接集合差 `C_move` 限制改动；尚非全局最优 | 🚧 部分完成 |
 | **Stage 2.5** | **评估**：小规模确定性工作负载与两-net 局部邻域穷举参照；不声称全局最优                         | 🚧 部分完成 |
 | **Stage 3** | **硬件映射**：映射到 CH446Q 开关状态，由本地 MCU 做供电/电流安全检查并可回退               | 📅 计划中 |
 
@@ -83,7 +83,7 @@ python3 -m jumperfree route list
 # 多跳交叉点资源图（独立状态文件 out/crossbar-state.json）
 python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
 python3 -m jumperfree route xbar create --net LONG --nodes N0,N4,N11
-python3 -m jumperfree route xbar create --net EXTRA --nodes N1,N5 --rearrange --max-moves 8 --max-states 2000
+python3 -m jumperfree route xbar create --net EXTRA --nodes N1,N5 --rearrange --max-moves 8 --max-states 2000 --max-rip-nets 3
 python3 -m jumperfree route xbar query --net LONG
 python3 -m jumperfree route xbar delete --net LONG
 
