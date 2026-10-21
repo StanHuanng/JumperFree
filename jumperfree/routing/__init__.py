@@ -14,6 +14,7 @@ from .steiner import (
     crossbar_init_state,
     crossbar_query,
 )
+from .rearrange import crossbar_create_net_with_rearrange
 
 __all__ = [
     "RouteError",
@@ -26,4 +27,5 @@ __all__ = [
     "crossbar_delete_net",
     "crossbar_init_state",
     "crossbar_query",
+    "crossbar_create_net_with_rearrange",
 ]

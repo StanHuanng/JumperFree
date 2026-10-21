@@ -42,7 +42,9 @@
 
 **多跳 Steiner 路由（Stage 1.6）**：从编号最小的成员开始，反复以确定性的 0/1 代价最短路（固定接线代价 0、每个新闭合交叉点代价 1）把最近的未连接成员接到当前树上。跨芯片固定链路两端和同线节点按真实电气连接一起占用；每次成功后再运行短接检查。
 
-**当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 模型虽支持多跳和阻塞，但采用贪心 Steiner 近似，不保证全局最优，也**不会重排（rearrange）**既有 net。因此 `NO_FREE_PATH` 只表示当前空闲资源中未找到路径，并非证明硬件拓扑绝对不可路由。
+**有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，按稳定顺序试移除至多两个候选 net，先路由新 net，再用 Steiner 近似重路由候选 net。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计。
+
+**当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 的重排只是少量 net 上的有界搜索，重路由仍采用贪心 Steiner 近似，不是全局最优算法，也不提供 Clos 网络的可重排保证。除非完整资源图的连通性等廉价不变量能够证明不可达，预算内失败只报告“未找到”，不声称硬件拓扑绝对不可路由。
 
 ---
 
@@ -53,7 +55,7 @@
 | **Stage 1** | **软件路由**：N 节点模型、net 增删查、隔离、原子创建、结构化错误                            | ✅ 已完成 |
 | **Stage 1.5** | **确认对标规模**：已记录 Jumperless 节点计数口径（物理插孔 ≠ 独立电气节点；参考资料，未硬件验证） | ✅ 已完成 |
 | **Stage 1.6** | **真实拓扑路由**：在交叉点资源图上实现确定性多跳 Steiner 近似（基于最短路） | ✅ 已完成 |
-| **Stage 2** | **有界局部重排**：冲突检测 + 局部换路，以改动连接数 `C_move` 为主代价，超限明确返回“未找到” | 📅 计划中 |
+| **Stage 2** | **有界局部重排**：至多重路由两个既有 net，以连接集合差 `C_move` 限制改动；尚非全局最优 | 🚧 部分完成 |
 | **Stage 2.5** | **评估**：小规模拓扑穷举参照，统计成功率、耗时、重排次数；错误短接必须为 0                  | 📅 计划中 |
 | **Stage 3** | **硬件映射**：映射到 CH446Q 开关状态，由本地 MCU 做供电/电流安全检查并可回退               | 📅 计划中 |
 
@@ -76,6 +78,7 @@ python3 -m jumperfree route list
 # 多跳交叉点资源图（独立状态文件 out/crossbar-state.json）
 python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
 python3 -m jumperfree route xbar create --net LONG --nodes N0,N4,N11
+python3 -m jumperfree route xbar create --net EXTRA --nodes N1,N5 --rearrange --max-moves 8 --max-states 2000
 python3 -m jumperfree route xbar query --net LONG
 python3 -m jumperfree route xbar delete --net LONG
 
@@ -97,6 +100,7 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/model.py     路由模型：状态、建网、删网、查询、错误码
   routing/crossbar.py  参数化交叉点资源图、拓扑验证与短接检查
   routing/steiner.py   确定性多跳 Steiner 近似与 xbar 状态
+  routing/rearrange.py Stage 2 有界局部重排与 C_move 统计
   routing/cli.py       route 子命令
 docs/routing/          概览 / 模型 / CLI 文档
 examples/routing/      状态文件示例

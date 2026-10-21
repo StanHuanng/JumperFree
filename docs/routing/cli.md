@@ -28,6 +28,7 @@ Jumperless 节点数仍待后续确认。
 ```bash
 python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
 python3 -m jumperfree route xbar create --net span --nodes N0,N4,N11
+python3 -m jumperfree route xbar create --net extra --nodes N1,N5 --rearrange --max-moves 8 --max-states 2000
 python3 -m jumperfree route xbar query
 python3 -m jumperfree route xbar query --net span
 python3 -m jumperfree route xbar delete --net span
@@ -40,4 +41,6 @@ python3 -m jumperfree route xbar init --topology-file topology.json --state stat
 
 所有 xbar 命令沿用一行摘要加一行排序键 `ROUTE_JSON` 的输出约定。状态保存每个 net 的成员
 节点、独占芯片线和闭合交叉点；查询同时给出每个 net 的交叉点 hop 数和总体线占用。
+`--rearrange` 默认关闭；启用后仅在普通建网返回 `NO_FREE_PATH` 时进行有界局部重排，成功输出
+会在 `ROUTE_JSON.rearrange` 中包含 move 数、实际改变的 net 和探索状态数。
 

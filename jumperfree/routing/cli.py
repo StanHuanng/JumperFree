@@ -9,6 +9,7 @@ from typing import Any
 
 from .crossbar import small_topology
 from .model import RouteError, create_net, delete_net, init_state, list_nets, query_state
+from .rearrange import crossbar_create_net_with_rearrange
 from .steiner import (
     crossbar_create_net,
     crossbar_delete_net,
@@ -61,6 +62,9 @@ def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     xbar_create.add_argument("--net", required=True)
     xbar_create.add_argument("--nodes", required=True, help="comma-separated node ids")
     xbar_create.add_argument("--state", type=Path, default=DEFAULT_CROSSBAR_STATE)
+    xbar_create.add_argument("--rearrange", action="store_true")
+    xbar_create.add_argument("--max-moves", type=int, default=8)
+    xbar_create.add_argument("--max-states", type=int, default=2000)
 
     xbar_delete = xbar_commands.add_parser("delete", help="delete a crossbar net")
     xbar_delete.add_argument("--net", required=True)
@@ -113,7 +117,9 @@ def _emit(summary: str, payload: dict[str, Any]) -> None:
     print(f"ROUTE_JSON {json.dumps(payload, sort_keys=True, separators=(',', ':'))}")
 
 
-def _run_crossbar(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
+def _run_crossbar(
+    args: argparse.Namespace,
+) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
     if args.xbar_command == "init":
         topology = (
             _load_topology(args.topology_file)
@@ -123,27 +129,38 @@ def _run_crossbar(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         state = crossbar_init_state(topology)
         _write_state(args.state, state)
         data = crossbar_query(state)
-        return f"ROUTE xbar init lines={data['occupancy']['total']} state={args.state}", data
+        return f"ROUTE xbar init lines={data['occupancy']['total']} state={args.state}", data, None
 
     state = _load_state(args.state)
     if args.xbar_command == "create":
-        state = crossbar_create_net(state, args.net, _parse_crossbar_nodes(args.nodes))
+        nodes = _parse_crossbar_nodes(args.nodes)
+        stats = None
+        if args.rearrange:
+            state, stats = crossbar_create_net_with_rearrange(
+                state,
+                args.net,
+                nodes,
+                max_moves=args.max_moves,
+                max_states=args.max_states,
+            )
+        else:
+            state = crossbar_create_net(state, args.net, nodes)
         _write_state(args.state, state)
         data = crossbar_query(state, args.net)
-        return f"ROUTE xbar create net={args.net} nodes={len(data['nodes'])}", data
+        return f"ROUTE xbar create net={args.net} nodes={len(data['nodes'])}", data, stats
     if args.xbar_command == "delete":
         state = crossbar_delete_net(state, args.net)
         _write_state(args.state, state)
-        return f"ROUTE xbar delete net={args.net}", crossbar_query(state)
+        return f"ROUTE xbar delete net={args.net}", crossbar_query(state), None
     data = crossbar_query(state, args.net)
-    return f"ROUTE xbar query net={args.net or '*'}", data
+    return f"ROUTE xbar query net={args.net or '*'}", data, None
 
 
 def run_route(args: argparse.Namespace) -> int:
     """Execute a parsed route command and return its process status."""
     try:
         if args.route_command == "xbar":
-            summary, data = _run_crossbar(args)
+            summary, data, rearrange_stats = _run_crossbar(args)
             operation = args.xbar_command
         elif args.route_command == "init":
             state = init_state(args.nodes, args.seed, args.capacity)
@@ -170,7 +187,10 @@ def run_route(args: argparse.Namespace) -> int:
                 data = list_nets(state)
                 summary = f"ROUTE list nets={len(data)}"
             operation = args.route_command
-        _emit(summary, {"data": data, "ok": True, "operation": operation})
+        payload = {"data": data, "ok": True, "operation": operation}
+        if args.route_command == "xbar" and rearrange_stats is not None:
+            payload["rearrange"] = rearrange_stats
+        _emit(summary, payload)
         return 0
     except RouteError as exc:
         operation = getattr(args, "xbar_command", None) or args.route_command
