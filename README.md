@@ -44,6 +44,8 @@
 
 **有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，按稳定顺序试移除至多两个候选 net，先路由新 net，再用 Steiner 近似重路由候选 net。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计。
 
+**评估工具（Stage 2.5，部分完成）**：`scripts/run_eval.py` 在 1–3 颗芯片、2–3 条 X/Y 线的小拓扑上生成确定性的随机增删 net 工作负载，对比纯 Steiner 与有界重排，统计成功率、移动/搜索状态、预算遗漏、参照一致率以及短接/线独占违规。参照会穷举移除至多两个既有 net 的组合及重路由顺序；它只在相同局部重排邻域内穷举，仍使用 Steiner 建路，不是全局最优参照。
+
 **当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 的重排只是少量 net 上的有界搜索，重路由仍采用贪心 Steiner 近似，不是全局最优算法，也不提供 Clos 网络的可重排保证。除非完整资源图的连通性等廉价不变量能够证明不可达，预算内失败只报告“未找到”，不声称硬件拓扑绝对不可路由。
 
 ---
@@ -56,7 +58,7 @@
 | **Stage 1.5** | **确认对标规模**：已记录 Jumperless 节点计数口径（物理插孔 ≠ 独立电气节点；参考资料，未硬件验证） | ✅ 已完成 |
 | **Stage 1.6** | **真实拓扑路由**：在交叉点资源图上实现确定性多跳 Steiner 近似（基于最短路） | ✅ 已完成 |
 | **Stage 2** | **有界局部重排**：至多重路由两个既有 net，以连接集合差 `C_move` 限制改动；尚非全局最优 | 🚧 部分完成 |
-| **Stage 2.5** | **评估**：小规模拓扑穷举参照，统计成功率、耗时、重排次数；错误短接必须为 0                  | 📅 计划中 |
+| **Stage 2.5** | **评估**：小规模确定性工作负载与两-net 局部邻域穷举参照；不声称全局最优                         | 🚧 部分完成 |
 | **Stage 3** | **硬件映射**：映射到 CH446Q 开关状态，由本地 MCU 做供电/电流安全检查并可回退               | 📅 计划中 |
 
 > 三级 Clos 的重排上界等理论结论只作方法参考；在硬件拓扑被证明满足条件前，不套用其数值。
@@ -85,6 +87,9 @@ python3 -m jumperfree route xbar delete --net LONG
 # 测试与 100% 行覆盖率（标准库 trace）
 python3 -m unittest discover -s tests -t .
 python3 scripts/coverage_report.py
+
+# 确定性小拓扑评估（JSON 含参照一致率；短接计数必须为 0）
+python3 scripts/run_eval.py --seed 7 --trials 20 --out out/eval.json
 ```
 
 `small_topology` 会在每条 X 线上挂接一个节点，因此跨芯片路径可能需要把中继芯片上的节点也加入 net。
@@ -101,11 +106,13 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/crossbar.py  参数化交叉点资源图、拓扑验证与短接检查
   routing/steiner.py   确定性多跳 Steiner 近似与 xbar 状态
   routing/rearrange.py Stage 2 有界局部重排与 C_move 统计
+  routing/eval.py      Stage 2.5 确定性评估与局部穷举参照
   routing/cli.py       route 子命令
 docs/routing/          概览 / 模型 / CLI 文档
 examples/routing/      状态文件示例
 tests/                 标准库 unittest
 scripts/coverage_report.py  行覆盖率报告（要求 100%）
+scripts/run_eval.py         小拓扑评估 JSON 生成器
 .github/workflows/ci.yml    Python 3.11 + 3.13 CI
 ```
 
