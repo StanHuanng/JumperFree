@@ -20,8 +20,17 @@ DEFAULT_MAX_RIP_NETS = 3
 
 ScaleOperation = dict[str, Any]
 ScaleRouter = Callable[
-    [dict[str, Any], str, Iterable[str]], tuple[dict[str, Any], dict[str, Any]]
+    [dict[str, Any], str, Iterable[str], ScaleOperation],
+    tuple[dict[str, Any], dict[str, Any]],
 ]
+
+_EXPECTED_CREATE_FAILURES = {
+    "NET_ALREADY_EXISTS",
+    "NODES_ALREADY_IN_OTHER_NET",
+    "NODES_PERMANENTLY_JOINED",
+    "NO_FREE_PATH",
+}
+_EXPECTED_DELETE_FAILURES = {"NET_NOT_FOUND"}
 
 
 def _digest(value: object) -> str:
@@ -49,8 +58,21 @@ def make_scale_workload(*, seed: int = 7, trials: int = 60) -> list[ScaleOperati
     fixed = [
         _operation("create", "old0", ["BB01", "BB02"], "congestion_setup"),
         _operation("create", "old1", ["BB03", "BB04"], "congestion_setup"),
+        {
+            **_operation(
+                "create", "budget-zero", ["BB05", "SF_L"], "zero_state_budget_probe"
+            ),
+            "budgets": {"max_moves": 64, "max_rip_nets": 3, "max_states": 0},
+        },
+        {
+            **_operation(
+                "create", "budget-moves", ["BB05", "SF_L"],
+                "insufficient_move_budget_probe",
+            ),
+            "budgets": {"max_moves": 6, "max_rip_nets": 3, "max_states": 32},
+        },
         _operation(
-            "create", "congestion", ["BB05", "SF_L"], "congestion_and_budget_probe"
+            "create", "congestion", ["BB05", "SF_L"], "congestion_recovery"
         ),
         _operation("delete", "congestion", [], "delete_reuse"),
         _operation("delete", "old0", [], "delete_reuse"),
@@ -148,7 +170,10 @@ def assert_scale_state(state: dict[str, Any]) -> dict[str, int]:
 
 
 def _plain_router(
-    state: dict[str, Any], net_id: str, members: Iterable[str]
+    state: dict[str, Any],
+    net_id: str,
+    members: Iterable[str],
+    operation: ScaleOperation | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     return crossbar_create_net(state, net_id, members), {
         "moves": 0,
@@ -158,15 +183,19 @@ def _plain_router(
 
 def _bounded_router(max_moves: int, max_states: int, max_rip_nets: int) -> ScaleRouter:
     def route(
-        state: dict[str, Any], net_id: str, members: Iterable[str]
+        state: dict[str, Any],
+        net_id: str,
+        members: Iterable[str],
+        operation: ScaleOperation,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        budgets = operation.get("budgets", {})
         return crossbar_create_net_with_rearrange(
             state,
             net_id,
             members,
-            max_moves=max_moves,
-            max_states=max_states,
-            max_rip_nets=max_rip_nets,
+            max_moves=int(budgets.get("max_moves", max_moves)),
+            max_states=int(budgets.get("max_states", max_states)),
+            max_rip_nets=int(budgets.get("max_rip_nets", max_rip_nets)),
         )
 
     return route
@@ -184,6 +213,10 @@ def _replay(
     outcomes: list[dict[str, Any]] = []
     peak_occupancy = 0
     successes = 0
+    create_successes = 0
+    create_failures = 0
+    delete_successes = 0
+    delete_missing = 0
     assert_scale_state(state)
     for index, operation in enumerate(operations):
         before = copy.deepcopy(state)
@@ -196,15 +229,39 @@ def _replay(
         states = 0
         try:
             if operation["action"] == "create":
-                updated, stats = router(state, operation["net"], operation["members"])
+                updated, stats = router(
+                    state, operation["net"], operation["members"], operation
+                )
                 moves = int(stats.get("moves", 0))
                 states = int(stats.get("states_explored", 0))
             else:
                 updated = crossbar_delete_net(state, operation["net"])
+        except RouteError as exc:
+            expected = (
+                _EXPECTED_CREATE_FAILURES
+                if operation["action"] == "create"
+                else _EXPECTED_DELETE_FAILURES
+            )
+            if exc.code not in expected:
+                raise
+            if state != before:
+                raise AssertionError("failed request was not atomic") from exc
+            failure = exc.as_dict()
+            states = int(exc.details.get("states_explored", 0))
+            operation_max_states = int(
+                operation.get("budgets", {}).get("max_states", max_states)
+            )
+            if states > operation_max_states:
+                raise AssertionError("failed request exceeded the state budget") from exc
+            assert_scale_state(state)
+            if operation["action"] == "create":
+                create_failures += 1
+            else:
+                delete_missing += 1
+        else:
             if state != before:
                 raise AssertionError("router mutated its input state")
-            if moves > max_moves or states > max_states:
-                raise AssertionError("router exceeded an evaluation budget")
+            assert_scale_state(updated)
             expected_memberships = dict(old_memberships)
             if operation["action"] == "create":
                 expected_memberships[operation["net"]] = operation["members"]
@@ -215,23 +272,46 @@ def _replay(
             }
             if actual_memberships != expected_memberships:
                 raise AssertionError("operation did not preserve declared net memberships")
-            assert_scale_state(updated)
+            if operation["action"] == "create":
+                actual_moves = 0
+                for existing_id in old_memberships:
+                    for resource in ("lines", "crosspoints"):
+                        old_resources = {
+                            tuple(item) for item in state["nets"][existing_id][resource]
+                        }
+                        new_resources = {
+                            tuple(item) for item in updated["nets"][existing_id][resource]
+                        }
+                        actual_moves += len(old_resources ^ new_resources)
+                operation_max_moves = int(
+                    operation.get("budgets", {}).get("max_moves", max_moves)
+                )
+                operation_max_states = int(
+                    operation.get("budgets", {}).get("max_states", max_states)
+                )
+                if (
+                    actual_moves > operation_max_moves
+                    or moves > operation_max_moves
+                    or states > operation_max_states
+                ):
+                    raise AssertionError("router exceeded an evaluation budget")
+                if actual_moves != moves:
+                    raise AssertionError(
+                        "router-reported moves do not match independently computed C_move"
+                    )
             state = updated
             accepted = True
             successes += 1
-        except RouteError as exc:
-            if state != before:
-                raise AssertionError("failed request was not atomic") from exc
-            failure = exc.as_dict()
-            states = int(exc.details.get("states_explored", 0))
-            if states > max_states:
-                raise AssertionError("failed request exceeded the state budget") from exc
-            assert_scale_state(state)
+            if operation["action"] == "create":
+                create_successes += 1
+            else:
+                delete_successes += 1
         occupancy = sum(len(net["lines"]) for net in state["nets"].values())
         peak_occupancy = max(peak_occupancy, occupancy)
         outcomes.append({
             "accepted": accepted,
             "action": operation["action"],
+            "budgets": operation.get("budgets"),
             "case": operation["case"],
             "failure": failure,
             "index": index,
@@ -244,6 +324,10 @@ def _replay(
     constraints = assert_scale_state(state)
     return {
         "constraints": constraints,
+        "create_failures": create_failures,
+        "create_successes": create_successes,
+        "delete_missing": delete_missing,
+        "delete_successes": delete_successes,
         "failures": len(operations) - successes,
         "outcomes": outcomes,
         "peak_occupancy": peak_occupancy,

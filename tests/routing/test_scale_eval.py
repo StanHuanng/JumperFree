@@ -21,7 +21,9 @@ class ScaleEvaluationTests(unittest.TestCase):
         short = make_scale_workload(seed=7, trials=12)
         self.assertEqual(len(short), 12)
         self.assertEqual(short[0]["members"], ["BB01", "BB02"])
-        self.assertEqual(short[2]["case"], "congestion_and_budget_probe")
+        self.assertEqual(short[2]["case"], "zero_state_budget_probe")
+        self.assertEqual(short[3]["case"], "insufficient_move_budget_probe")
+        self.assertEqual(short[3]["budgets"]["max_moves"], 6)
         first = make_scale_workload(seed=7, trials=60)
         second = make_scale_workload(seed=7, trials=60)
         self.assertEqual(first, second)
@@ -45,12 +47,12 @@ class ScaleEvaluationTests(unittest.TestCase):
             state, "new", ["BB05", "SF_L"],
             max_moves=64, max_states=32, max_rip_nets=3,
         )
-        self.assertEqual(stats["moves"], 8)
+        self.assertEqual(stats["moves"], 7)
         self.assertEqual(stats["states_explored"], 1)
         self.assertEqual(state, snapshot)
         self.assertEqual(assert_scale_state(routed)["shorts_found"], 0)
         for limits in ({"max_states": 0, "max_moves": 64},
-                       {"max_states": 32, "max_moves": 7}):
+                       {"max_states": 32, "max_moves": 6}):
             with self.subTest(limits=limits), self.assertRaises(RouteError):
                 crossbar_create_net_with_rearrange(
                     state, "new", ["BB05", "SF_L"], max_rip_nets=3, **limits
@@ -75,20 +77,23 @@ class ScaleEvaluationTests(unittest.TestCase):
             self.assertTrue(all(item["moves"] <= 64 for item in result["outcomes"]))
             self.assertTrue(all(item["states"] <= 32 for item in result["outcomes"]))
         plain, rearranged = first["results"]
-        self.assertFalse(plain["outcomes"][2]["accepted"])
-        self.assertTrue(rearranged["outcomes"][2]["accepted"])
+        self.assertFalse(plain["outcomes"][4]["accepted"])
+        self.assertTrue(rearranged["outcomes"][4]["accepted"])
+        self.assertFalse(rearranged["outcomes"][2]["accepted"])
+        self.assertFalse(rearranged["outcomes"][3]["accepted"])
+        self.assertEqual(rearranged["outcomes"][4]["moves"], 7)
 
     def test_zero_and_exhausted_budgets_report_failures(self) -> None:
         zero = run_scale_evaluation(
-            seed=7, trials=3, max_moves=0, max_states=0, max_rip_nets=0
+            seed=7, trials=5, max_moves=0, max_states=0, max_rip_nets=0
         )
-        result = zero["results"][1]["outcomes"][2]
+        result = zero["results"][1]["outcomes"][4]
         self.assertFalse(result["accepted"])
         self.assertEqual(result["failure"]["details"]["states_explored"], 0)
         exhausted = run_scale_evaluation(
-            seed=7, trials=3, max_moves=7, max_states=1, max_rip_nets=1
+            seed=7, trials=5, max_moves=6, max_states=1, max_rip_nets=1
         )
-        self.assertFalse(exhausted["results"][1]["outcomes"][2]["accepted"])
+        self.assertFalse(exhausted["results"][1]["outcomes"][4]["accepted"])
 
     def test_argument_validation(self) -> None:
         for kwargs in ({"seed": True}, {"seed": "7"}, {"trials": -1}, {"trials": True}):
@@ -132,7 +137,7 @@ class ScaleEvaluationTests(unittest.TestCase):
         topology = v5_scale_topology()
         operation = make_scale_workload(trials=1)
 
-        def mutating(state, net_id, members):
+        def mutating(state, net_id, members, operation):
             updated = crossbar_create_net(state, net_id, members)
             state["leak"] = True
             return updated, {}
@@ -140,32 +145,64 @@ class ScaleEvaluationTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "mutated"):
             _replay(topology, operation, mutating, max_moves=64, max_states=32)
 
-        def over_budget(state, net_id, members):
+        def over_budget(state, net_id, members, operation):
             return crossbar_create_net(state, net_id, members), {"moves": 65}
 
         with self.assertRaisesRegex(AssertionError, "exceeded"):
             _replay(topology, operation, over_budget, max_moves=64, max_states=32)
 
-        def changes_membership(state, net_id, members):
+        def changes_membership(state, net_id, members, operation):
             updated = crossbar_create_net(state, net_id, members)
-            updated["nets"][net_id]["nodes"] = ["BB01", "BB03"]
-            return updated, {}
+            updated = crossbar_create_net(updated, "extra", ["BB03", "BB04"])
+            return updated, {"moves": 0, "states_explored": 0}
 
         with self.assertRaisesRegex(AssertionError, "memberships"):
             _replay(topology, operation, changes_membership, max_moves=64, max_states=32)
 
-        def failing_mutation(state, net_id, members):
+        def failing_mutation(state, net_id, members, operation):
             state["leak"] = True
             raise RouteError("NO_FREE_PATH", "no")
 
         with self.assertRaisesRegex(AssertionError, "not atomic"):
             _replay(topology, operation, failing_mutation, max_moves=64, max_states=32)
 
-        def failed_over_budget(state, net_id, members):
+        def failed_over_budget(state, net_id, members, operation):
             raise RouteError("NO_FREE_PATH", "no", states_explored=33)
 
         with self.assertRaisesRegex(AssertionError, "exceeded"):
             _replay(topology, operation, failed_over_budget, max_moves=64, max_states=32)
+
+    def test_replay_recomputes_moves_and_propagates_internal_errors(self) -> None:
+        topology = v5_scale_topology()
+        workload = make_scale_workload(trials=5)
+        operations = [workload[index] for index in (0, 1, 4)]
+
+        def lying_router(state, net_id, members, operation):
+            from jumperfree.routing.rearrange import crossbar_create_net_with_rearrange
+
+            updated, stats = crossbar_create_net_with_rearrange(
+                state, net_id, members, max_moves=64, max_states=32, max_rip_nets=3
+            )
+            stats["moves"] = 0
+            return updated, stats
+
+        with self.assertRaisesRegex(AssertionError, "independently computed C_move"):
+            _replay(topology, operations, lying_router, max_moves=64, max_states=32)
+
+        def internal_error(state, net_id, members, operation):
+            raise RouteError("INTERNAL_SHORT", "injected")
+
+        with self.assertRaisesRegex(RouteError, "injected"):
+            _replay(topology, operations[:1], internal_error, max_moves=64, max_states=32)
+
+        def invalid_return(state, net_id, members, operation):
+            updated = crossbar_create_net(state, net_id, members)
+            updated["nets"][net_id]["crosspoints"].append(["A", 99, 99])
+            return updated, {"moves": 0, "states_explored": 0}
+
+        with self.assertRaises(RouteError) as caught:
+            _replay(topology, operations[:1], invalid_return, max_moves=64, max_states=32)
+        self.assertEqual(caught.exception.code, "INVALID_CROSSPOINT")
 
     def test_plain_router_and_missing_delete_failure(self) -> None:
         topology = v5_scale_topology()
@@ -182,6 +219,8 @@ class ScaleEvaluationTests(unittest.TestCase):
             max_states=32,
         )
         self.assertEqual(result["failures"], 1)
+        self.assertEqual(result["create_failures"], 0)
+        self.assertEqual(result["delete_missing"], 1)
         self.assertEqual(result["outcomes"][0]["failure"]["code"], "NET_NOT_FOUND")
 
 

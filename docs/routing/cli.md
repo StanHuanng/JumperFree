@@ -60,6 +60,7 @@ python3 scripts/run_scale_eval.py \
 ```
 
 确定性路由报告写入 `--out`；实际耗时仅写入可选的 `--timings-out`，因此相同输入的主报告可逐字
-比较。超过 `--max-seconds` 时命令非零退出。报告字段与安全边界见
+比较。默认固定前缀包含零状态预算和 6-move 不足预算探针；随后拥塞恢复案例为 7 moves、1 个
+探索状态。报告分别提供建网成功/失败及删除不存在 net 的计数。超过 `--max-seconds` 时命令非零退出。报告字段与安全边界见
 [`scale-eval.md`](scale-eval.md)。
 

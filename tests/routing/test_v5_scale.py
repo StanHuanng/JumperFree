@@ -28,6 +28,13 @@ class V5ScaleTopologyTests(unittest.TestCase):
         self.assertEqual(len(graph.crosspoint_edges), 1536)
         self.assertEqual(len(graph.fixed_edges), 86)
         self.assertEqual(len(topology["inter_chip_links"]), 22)
+        self.assertEqual(topology["inter_chip_links"][:2], [
+            [["A", "Y", 0], ["B", "Y", 0]],
+            [["A", "Y", 1], ["B", "Y", 1]],
+        ])
+        self.assertEqual(
+            len({tuple(link[0]) for link in topology["inter_chip_links"][:2]}), 2
+        )
         self.assertEqual(topology["node_attachments"]["BB01"], ["A", "X", 8])
         self.assertEqual(topology["node_attachments"]["BB60"], ["H", "X", 14])
         self.assertEqual(topology["node_attachments"]["SF_L"], ["L", "X", 15])

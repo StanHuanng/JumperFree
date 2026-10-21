@@ -50,7 +50,7 @@ def v5_scale_topology() -> dict[str, Any]:
         attachments[f"SF_{chip}"] = [chip, "X", 15]
 
     links = [
-        [[left, "Y", 0 if index == 0 else 2 + lane], [right, "Y", lane]]
+        [[left, "Y", lane if index == 0 else 2 + lane], [right, "Y", lane]]
         for index, (left, right) in enumerate(zip(all_chips, all_chips[1:]))
         for lane in range(2)
     ]

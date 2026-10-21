@@ -46,7 +46,7 @@
 
 **评估工具（Stage 2.5，部分完成）**：`scripts/run_eval.py` 在 1–3 颗芯片、2–3 条 X/Y 线的小拓扑上生成确定性的随机增删 net 工作负载，对比纯 Steiner 与有界重排，统计成功率、移动/搜索状态、预算遗漏、参照一致率以及短接/线独占违规。参照会穷举移除至多两个既有 net 的组合及重路由顺序；它只在相同局部重排邻域内穷举，仍使用 Steiner 建路，不是全局最优参照。
 
-**V5 对标规模软件评估（Stage 2.5，部分完成）**：`v5-scale` 从随仓库保存的参考资料读取 12 颗芯片的尺寸与角色，构造 288 条独占线、1,536 个交叉点和 64 个外部端点，重复执行相同的确定性工作负载来比较普通 Steiner 与有界重排。面包板行映射、`SF_I`–`SF_L` 端点和双通道链路都标记为 **`verified:false`**；这只是在假设接线上的软件规模证据，不代表 V5 硬件容量或硬件验证。详见 [`docs/routing/scale-eval.md`](docs/routing/scale-eval.md)。
+**V5 对标规模软件评估（Stage 2.5，部分完成）**：`v5-scale` 从随仓库保存的参考资料读取 12 颗芯片的尺寸与角色，构造 288 条独占线、1,536 个交叉点和 64 个外部端点，重复执行相同的确定性工作负载来比较普通 Steiner 与有界重排。默认固定前缀包含零状态预算和 6-move 不足预算探针；拥塞恢复案例需要 7 moves、探索 1 个状态。报告分别统计建网成功、建网失败和删除不存在 net，不把它们混为一个成功率。面包板行映射、`SF_I`–`SF_L` 端点和双通道链路都标记为 **`verified:false`**；这只是在假设接线上的软件规模证据，不代表 V5 硬件容量或硬件验证。详见 [`docs/routing/scale-eval.md`](docs/routing/scale-eval.md)。
 
 **MCU 夹持区与真实场景（Block 1）**：可选的两排 MCU clip zone 把 MCU pin 映射为独立逻辑节点，并提供 ESP32/Blue Pill 外设组合的可执行场景。设计、schema、来源与实测结果见 [`docs/routing/scenarios.md`](docs/routing/scenarios.md)。两排夹点和适配器次序均为 **`verified:false`** 的设计假设，不代表真实硬件已经确认。
 
