@@ -15,7 +15,12 @@ from .steiner import (
     crossbar_query,
 )
 from .rearrange import crossbar_create_net_with_rearrange
-from .eval import check_constraints, exhaustive_reference, run_evaluation
+from .eval import (
+    check_constraints,
+    exhaustive_reference,
+    run_evaluation,
+    true_exhaustive_feasible,
+)
 from .scenarios import (
     Scenario,
     load_scenario,
@@ -37,6 +42,7 @@ __all__ = [
     "crossbar_create_net_with_rearrange",
     "check_constraints",
     "exhaustive_reference",
+    "true_exhaustive_feasible",
     "run_evaluation",
     "Scenario",
     "load_scenario",
