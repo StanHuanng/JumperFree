@@ -23,16 +23,22 @@ PROFILE_P = {
 }
 
 
-def route(scenario: Scenario) -> tuple[dict[str, object], dict[str, object]]:
+def route(
+    case: unittest.TestCase, scenario: Scenario
+) -> tuple[dict[str, object], dict[str, object]]:
     topology = scenario_to_topology(scenario)
     state = crossbar_init_state(topology)
     for net_id, nodes in scenario_to_route_requests(scenario):
         state = crossbar_create_net(state, net_id, nodes)
+        case.assertEqual(set(state["nets"][net_id]["nodes"]), set(nodes))
     return topology, state
 
 
 def assert_net_connected(
-    case: unittest.TestCase, topology: dict[str, object], net: dict[str, object]
+    case: unittest.TestCase,
+    topology: dict[str, object],
+    net: dict[str, object],
+    requested_nodes: list[str],
 ) -> None:
     graph = build_resource_graph(topology)
     adjacent: dict[object, set[object]] = {vertex: set() for vertex in graph.vertices}
@@ -43,16 +49,15 @@ def assert_net_connected(
         left, right = (chip, "X", x_line), (chip, "Y", y_line)
         adjacent[left].add(right)
         adjacent[right].add(left)
-    nodes = net["nodes"]  # type: ignore[assignment]
-    reached = {nodes[0]}
-    pending = [nodes[0]]
+    reached = {requested_nodes[0]}
+    pending = [requested_nodes[0]]
     while pending:
         vertex = pending.pop()
         for neighbor in adjacent[vertex]:
             if neighbor not in reached:
                 reached.add(neighbor)
                 pending.append(neighbor)
-    case.assertTrue(set(nodes).issubset(reached))
+    case.assertTrue(set(requested_nodes).issubset(reached))
 
 
 class ScenarioLibraryTests(unittest.TestCase):
@@ -71,11 +76,13 @@ class ScenarioLibraryTests(unittest.TestCase):
                 self.assertTrue(any("provisional" in assumption.lower()
                                     for assumption in scenario.assumptions))
 
-                topology, state = route(scenario)
+                topology, state = route(self, scenario)
                 requests = scenario_to_route_requests(scenario)
                 self.assertEqual(set(state["nets"]), {net_id for net_id, _ in requests})
-                for net_id, _ in requests:
-                    assert_net_connected(self, topology, state["nets"][net_id])
+                for net_id, requested_nodes in requests:
+                    assert_net_connected(
+                        self, topology, state["nets"][net_id], requested_nodes
+                    )
                 points = [
                     point for net in state["nets"].values() for point in net["crosspoints"]
                 ]
@@ -91,7 +98,7 @@ class ScenarioLibraryTests(unittest.TestCase):
                         self.assertTrue(node.startswith("N"))
                         self.assertIn(int(node[1:]), modules[owner].placement.rows)
 
-                second_topology, second_state = route(load_scenario(path))
+                second_topology, second_state = route(self, load_scenario(path))
                 self.assertEqual(second_topology, topology)
                 self.assertEqual(second_state, state)
 
@@ -110,6 +117,7 @@ class ScenarioLibraryTests(unittest.TestCase):
                 before = copy.deepcopy(state)
                 try:
                     state = crossbar_create_net(state, net_id, nodes)
+                    self.assertEqual(set(state["nets"][net_id]["nodes"]), set(nodes))
                 except RouteError as exc:
                     self.assertEqual(net_id, "second")
                     self.assertEqual(exc.code, scenario.expected.error_code)

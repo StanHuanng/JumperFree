@@ -407,11 +407,16 @@ def _parse_sources(value: object, scenario_id: str) -> tuple[str, ...]:
               scenario_id=scenario_id, path="$.sources", value=value)
     sources: list[str] = []
     for index, item in enumerate(value):
-        source = _text(item, scenario_id, f"$.sources[{index}]")
-        parsed = urlparse(source)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        path = f"$.sources[{index}]"
+        source = _text(item, scenario_id, path)
+        try:
+            parsed = urlparse(source)
+            valid = parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+        except ValueError:
+            valid = False
+        if not valid:
             _fail("INVALID_SCENARIO", "source must be an HTTP(S) URL",
-                  scenario_id=scenario_id, path=f"$.sources[{index}]", value=item)
+                  scenario_id=scenario_id, path=path, value=item)
         sources.append(source)
     return tuple(sources)
 
@@ -516,7 +521,6 @@ def _resolve(
             pin: position.value for pin, position in module.pins.items()
             if isinstance(position, Offset)
         }
-        nulls = sorted(pin for pin, position in module.pins.items() if position is None)
         if len(set(relative.values())) != len(relative):
             _fail("CONFLICTING_PIN_PLACEMENT", "relative pins share one offset",
                   scenario_id=scenario_id, path=f"$.modules.{module.id}.pins",
@@ -534,9 +538,7 @@ def _resolve(
             chosen: int | None = None
             for anchor in structural:
                 rows = {anchor + offset for offset in relative.values()}
-                free = [row for row in module.placement.rows
-                        if row not in occupied and row not in rows]
-                if not rows.intersection(occupied) and len(free) >= len(nulls):
+                if not rows.intersection(occupied):
                     chosen = anchor
                     break
             if chosen is None:
@@ -544,15 +546,20 @@ def _resolve(
                       scenario_id=scenario_id, path=f"$.modules.{module.id}.placement",
                       module=module.id)
             targets = {pin: chosen + offset for pin, offset in relative.items()}
-        free_rows = [row for row in module.placement.rows
-                     if row not in occupied and row not in targets.values()]
+        for pin in sorted(targets):
+            row = targets[pin]
+            endpoint = f"{module.id}.{pin}"
+            occupied[row] = endpoint
+            resolved[endpoint] = f"N{row}"
+
+    for module in modules:
+        nulls = sorted(pin for pin, position in module.pins.items() if position is None)
+        free_rows = [row for row in module.placement.rows if row not in occupied]
         if len(free_rows) < len(nulls):
             _fail("CONFLICTING_PIN_PLACEMENT", "automatic pins have too few free rows",
                   scenario_id=scenario_id, path=f"$.modules.{module.id}.placement",
                   module=module.id)
-        targets.update(dict(zip(nulls, free_rows, strict=False)))
-        for pin in sorted(targets):
-            row = targets[pin]
+        for pin, row in zip(nulls, free_rows, strict=False):
             endpoint = f"{module.id}.{pin}"
             occupied[row] = endpoint
             resolved[endpoint] = f"N{row}"

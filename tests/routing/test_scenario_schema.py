@@ -198,6 +198,10 @@ class ScenarioSchemaTests(unittest.TestCase):
         self.assertFalse(expected.routeable)
         self.assertEqual(expected.error_code, "NO_FREE_PATH")
 
+    def test_malformed_source_url_is_a_structured_error(self) -> None:
+        error = self.assert_code(changed(("sources",), ["http://["]))
+        self.assertEqual(error.details["path"], "$.sources[0]")
+
     def test_reference_and_clip_errors_use_specific_codes(self) -> None:
         outside = changed(("mcu", "pins", "A"), {"row": 0, "col": 20})
         self.assert_code(outside, "MCU_PIN_OUTSIDE_CLIP_ZONE")

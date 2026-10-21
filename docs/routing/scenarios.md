@@ -20,7 +20,7 @@ MCU 区目前是逻辑仿真模型：面包板之外有两排独立夹点，每�
 
 可选 `schema_version` 目前只能为 `1`。可选 `topology` 可设置 `chips`、`x_lines`、`y_lines`、`links_per_pair`、`clip_rows`、`clips_per_row`、`mcu_links`；`clip_rows` 必须为 2。
 
-模块 `placement` 必须且只能使用一个选择器：闭区间 `row_range:[lo,hi]`，或离散且不重复的 `rows:[...]`。pin 位置可为绝对行号、相对位置 `{"offset":n}`，或 `null` 自动放置。算法先按模块 ID/pin 名预留所有绝对行，再按模块 ID 选择最小可用 anchor，最后按 pin 名把 `null` 分配到最低空闲行。它不根据路由结果回溯或移动器件。
+模块 `placement` 必须且只能使用一个选择器：闭区间 `row_range:[lo,hi]`，或离散且不重复的 `rows:[...]`。pin 位置可为绝对行号、相对位置 `{"offset":n}`，或 `null` 自动放置。算法分三个全局阶段：先按模块 ID/pin 名预留所有绝对行；再按模块 ID 为全部相对 pin 选择最小可用 anchor；最后按模块 ID/pin 名把全部 `null` 分配到各自允许范围内的最低空闲行。它不根据路由结果回溯或移动器件。
 
 同一供电域使用一个多成员 net；3.3V 与 5V 始终分开。一个端点只能属于一个 net。`expected.routeable=false` 时还必须给出 `error_code` 和非空 `known_limitation`。
 

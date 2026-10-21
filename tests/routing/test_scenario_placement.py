@@ -58,6 +58,29 @@ class ScenarioPlacementTests(unittest.TestCase):
         self.assertEqual(loaded.endpoint_nodes["a_relative.B_NULL"], "N3")
         self.assertEqual(loaded.endpoint_nodes["mcu.A"], "MCU_R1_C19")
 
+    def test_all_relative_anchors_are_reserved_before_null_pins(self) -> None:
+        data = placement_scenario([
+            {
+                "id": "a", "kind": "A", "placement": {"rows": [0, 1, 2]},
+                "pins": {"P": None},
+            },
+            {
+                "id": "b", "kind": "B", "placement": {"rows": [0, 1]},
+                "pins": {"P": {"offset": 0}, "Q": {"offset": 1}},
+            },
+        ])
+        data["mcu"]["pins"]["B"] = {"row": 0, "col": 0}  # type: ignore[index]
+        data["nets"] = [
+            {"id": "a-net", "members": ["mcu.A", "a.P"]},
+            {"id": "b-net", "members": ["mcu.B", "b.P"]},
+        ]
+
+        loaded = load_scenario(data)
+
+        self.assertEqual(loaded.endpoint_nodes["b.P"], "N0")
+        self.assertEqual(loaded.endpoint_nodes["b.Q"], "N1")
+        self.assertEqual(loaded.endpoint_nodes["a.P"], "N2")
+
     def test_reordered_input_has_identical_normalized_placement_and_requests(self) -> None:
         data = placement_scenario([
             {"id": "beta", "kind": "part", "placement": {"rows": [4, 3]},
@@ -107,7 +130,7 @@ class ScenarioPlacementTests(unittest.TestCase):
                 {"id": "a", "kind": "a", "placement": {"rows": [0, 1]},
                  "pins": {"A": 0, "B": 1}},
                 {"id": "b", "kind": "b", "placement": {"rows": [0, 1]},
-                 "pins": {"C": None}},
+                 "pins": {"C": {"offset": 0}}},
             ],
         ]
         for modules in cases:
