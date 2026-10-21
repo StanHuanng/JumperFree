@@ -104,15 +104,11 @@ def _validated_parts(
         chips[name] = (x_lines, y_lines)
 
     attachments: dict[str, LineVertex] = {}
-    occupied_attachment_lines: set[LineVertex] = set()
     for node, value in attachments_record.items():
         if not isinstance(node, str) or not node:
             _invalid("node id must be a non-empty string", node=node)
         endpoint = _endpoint(value, chips, f"node_attachments.{node}")
-        if endpoint in occupied_attachment_lines:
-            _invalid("a chip line cannot attach more than one node", endpoint=endpoint)
         attachments[node] = endpoint
-        occupied_attachment_lines.add(endpoint)
 
     links: list[Edge] = []
     seen_links: set[Edge] = set()

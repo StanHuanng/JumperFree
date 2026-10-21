@@ -21,3 +21,23 @@ python3 -m jumperfree route delete --net power
 本 CLI 没有 `rearrange` 命令，也不驱动 CH446Q 或其他硬件。节点数必须由调用者显式配置；真实
 Jumperless 节点数仍待后续确认。
 
+## 交叉点资源图命令
+
+交叉点路由使用独立的默认状态文件 `out/crossbar-state.json`：
+
+```bash
+python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
+python3 -m jumperfree route xbar create --net span --nodes N0,N4,N11
+python3 -m jumperfree route xbar query
+python3 -m jumperfree route xbar query --net span
+python3 -m jumperfree route xbar delete --net span
+
+# 也可载入包含 chips、node_attachments、inter_chip_links 的 JSON 拓扑
+python3 -m jumperfree route xbar init --topology-file topology.json --state state.json
+```
+
+`small_topology` 会在每条 X 线上挂接一个节点，因此跨芯片路径可能需要把中继芯片上的节点也加入 net。
+
+所有 xbar 命令沿用一行摘要加一行排序键 `ROUTE_JSON` 的输出约定。状态保存每个 net 的成员
+节点、独占芯片线和闭合交叉点；查询同时给出每个 net 的交叉点 hop 数和总体线占用。
+

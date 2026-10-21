@@ -81,7 +81,6 @@ class CrossbarTests(unittest.TestCase):
             {**valid, "inter_chip_links": {}},
             {**valid, "node_attachments": {"": ["C0", "X", 0]}},
             {**valid, "node_attachments": {"a": []}},
-            {**valid, "node_attachments": {"a": ["C0", "X", 0], "b": ["C0", "X", 0]}},
             {**valid, "node_attachments": {"a": ["C0", "Z", 0]}},
             {**valid, "node_attachments": {"a": ["C0", "X", True]}},
             {**valid, "node_attachments": {"a": ["C0", "X", 9]}},
@@ -100,6 +99,13 @@ class CrossbarTests(unittest.TestCase):
                 )  # type: ignore[arg-type]
         with self.assertRaises(RouteError):
             small_topology(node_prefix="")
+
+        shared_attachment = {
+            **valid,
+            "node_attachments": {"a": ["C0", "X", 0], "b": ["C0", "X", 0]},
+        }
+        validate_topology(shared_attachment)
+        self.assertEqual(len(build_resource_graph(shared_attachment).fixed_edges), 2)
 
     def test_find_shorts_positive_negative_and_assignment_forms(self) -> None:
         topology = small_topology(chips=1, x_lines=2, y_lines=1, links_per_pair=0)

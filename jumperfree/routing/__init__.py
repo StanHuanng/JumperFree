@@ -8,6 +8,12 @@ from .model import (
     list_nets,
     query_state,
 )
+from .steiner import (
+    crossbar_create_net,
+    crossbar_delete_net,
+    crossbar_init_state,
+    crossbar_query,
+)
 
 __all__ = [
     "RouteError",
@@ -16,4 +22,8 @@ __all__ = [
     "init_state",
     "list_nets",
     "query_state",
+    "crossbar_create_net",
+    "crossbar_delete_net",
+    "crossbar_init_state",
+    "crossbar_query",
 ]
