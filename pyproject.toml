@@ -15,3 +15,6 @@ jumperfree = "jumperfree.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["jumperfree*"]
+
+[tool.setuptools.package-data]
+"jumperfree.routing" = ["topologies/*.json"]
