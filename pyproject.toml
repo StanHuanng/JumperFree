@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jumperfree"
+version = "0.1.0"
+description = "Deterministic software router for an AI-driven jumperless prototyping board"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+jumperfree = "jumperfree.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["jumperfree*"]

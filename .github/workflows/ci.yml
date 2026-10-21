@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t . -v
+      - name: Coverage (must be 100%)
+        run: python scripts/coverage_report.py
+      - name: CLI smoke
+        run: |
+          python -m jumperfree route init --nodes 8 --seed 7
+          python -m jumperfree route create --net NET_1 --nodes 0,1,2
+          python -m jumperfree route create --net NET_2 --nodes 3,4
+          python -m jumperfree route query
+          python -m jumperfree route delete --net NET_1
+          python -m jumperfree route list
