@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "stm32-tb6612-encoder",
+  "title": "Blue Pill single motor channel with encoder",
+  "topology": {"chips": 2, "x_lines": 16, "y_lines": 24, "links_per_pair": 8, "clip_rows": 2, "clips_per_row": 20, "mcu_links": 16},
+  "mcu": {"kind": "STM32F103 Blue Pill provisional clip adapter", "pins": {"GND": "R0C0", "3V3": "R0C1", "PB14": "R0C2", "PB15": "R0C3", "PA8": "R0C4", "PB13": "R0C5", "PA0": "R0C6", "PA1": "R0C7"}},
+  "modules": [
+    {"id": "driver", "kind": "TB6612FNG carrier channel A control header", "placement": {"rows": [0, 1, 2, 3, 4, 5]}, "pins": {"GND": 0, "VCC": 1, "AIN1": 2, "AIN2": 3, "PWMA": 4, "STBY": 5}},
+    {"id": "encoder", "kind": "3.3V quadrature encoder connector", "placement": {"rows": [7, 8, 9, 10]}, "pins": {"GND": 7, "VCC": 8, "A": 9, "B": 10}},
+    {"id": "power", "kind": "external logic supply connector", "placement": {"rows": [12, 13]}, "pins": {"GND": 12, "3V3": 13}}
+  ],
+  "nets": [
+    {"id": "ain1", "members": ["mcu.PB14", "driver.AIN1"]},
+    {"id": "ain2", "members": ["mcu.PB15", "driver.AIN2"]},
+    {"id": "encoder_a", "members": ["mcu.PA0", "encoder.A"]},
+    {"id": "encoder_b", "members": ["mcu.PA1", "encoder.B"]},
+    {"id": "gnd", "members": ["mcu.GND", "driver.GND", "encoder.GND", "power.GND"]},
+    {"id": "pwma", "members": ["mcu.PA8", "driver.PWMA"]},
+    {"id": "standby", "members": ["mcu.PB13", "driver.STBY"]},
+    {"id": "v3v3", "members": ["mcu.3V3", "driver.VCC", "encoder.VCC", "power.3V3"]}
+  ],
+  "sources": ["https://www.zovps.com/article/index.php/post/104296.html", "https://www.pololu.com/file/0J648/TB6612FNG-dual-motor-driver-carrier-schematic-diagram.pdf"],
+  "assumptions": ["Dedicated MCU zone verified:false; Blue Pill clip positions are provisional adapter assumptions", "AIN1=PB14, AIN2=PB15, PWMA=PA8, encoder A/B=PA0/PA1 follow the cited project", "PB13 for STBY is a project design choice", "VM, motor outputs, unused channel B, motor power, and high-current wiring are external to this topology", "Encoder and TB6612 logic are assumed 3.3V compatible"],
+  "expected": {"routeable": true}
+}

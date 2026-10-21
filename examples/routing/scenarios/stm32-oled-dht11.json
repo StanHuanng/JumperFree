@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "stm32-oled-dht11",
+  "title": "Blue Pill OLED and DHT11 weather display",
+  "topology": {"chips": 2, "x_lines": 16, "y_lines": 24, "links_per_pair": 8, "clip_rows": 2, "clips_per_row": 20, "mcu_links": 16},
+  "mcu": {"kind": "STM32F103 Blue Pill provisional clip adapter", "pins": {"GND": "R0C0", "3V3": "R0C1", "PB6": "R0C2", "PB7": "R0C3", "PA0": "R0C4"}},
+  "modules": [
+    {"id": "oled", "kind": "SSD1306 I2C 4-pin", "placement": {"row_range": [0, 7]}, "pins": {"GND": {"offset": 0}, "VCC": {"offset": 1}, "SCL": {"offset": 2}, "SDA": {"offset": 3}}},
+    {"id": "dht11", "kind": "DHT11 conditioned module", "placement": {"rows": [8, 9, 10]}, "pins": {"GND": 8, "VCC": 9, "DATA": 10}},
+    {"id": "power", "kind": "external 3.3V connector", "placement": {"rows": [12, 13]}, "pins": {"GND": 12, "3V3": 13}}
+  ],
+  "nets": [
+    {"id": "data", "members": ["mcu.PA0", "dht11.DATA"]},
+    {"id": "gnd", "members": ["mcu.GND", "oled.GND", "dht11.GND", "power.GND"]},
+    {"id": "scl", "members": ["mcu.PB6", "oled.SCL"]},
+    {"id": "sda", "members": ["mcu.PB7", "oled.SDA"]},
+    {"id": "v3v3", "members": ["mcu.3V3", "oled.VCC", "dht11.VCC", "power.3V3"]}
+  ],
+  "sources": ["https://simple-circuit.com/blue-pill-stm32-ssd1306-oled-i2c-mode-interface/", "https://microdigisoft.com/interfacing-stm32-with-ssd1036-oled-and-dht11-sensor/", "https://wiki.seeedstudio.com/Grove-TemperatureAndHumidity_Sensor/"],
+  "assumptions": ["Dedicated MCU zone verified:false; Blue Pill clip positions are provisional adapter assumptions", "I2C1 uses PB6=SCL and PB7=SDA; PA0 is the selected DHT11 data GPIO", "The DHT11 module includes its required pull-up and is operated at 3.3V", "OLED occupies only its four resolved front-row terminals"],
+  "expected": {"routeable": true}
+}

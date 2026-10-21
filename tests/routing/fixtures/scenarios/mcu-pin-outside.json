@@ -1,0 +1,10 @@
+{
+  "id": "mcu-pin-outside",
+  "title": "Out-of-zone MCU clip",
+  "mcu": {"kind": "test adapter", "pins": {"A": "R2C0"}},
+  "modules": [{"id": "target", "kind": "target", "placement": {"rows": [0]}, "pins": {"A": 0}}],
+  "nets": [{"id": "a", "members": ["mcu.A", "target.A"]}],
+  "sources": ["https://example.com/test-fixture"],
+  "assumptions": [],
+  "expected": {"routeable": true}
+}
