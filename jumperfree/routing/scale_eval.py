@@ -24,12 +24,7 @@ ScaleRouter = Callable[
     tuple[dict[str, Any], dict[str, Any]],
 ]
 
-_EXPECTED_CREATE_FAILURES = {
-    "NET_ALREADY_EXISTS",
-    "NODES_ALREADY_IN_OTHER_NET",
-    "NODES_PERMANENTLY_JOINED",
-    "NO_FREE_PATH",
-}
+_EXPECTED_CREATE_FAILURES = {"NO_FREE_PATH"}
 _EXPECTED_DELETE_FAILURES = {"NET_NOT_FOUND"}
 
 
@@ -313,7 +308,9 @@ def _replay(
                 else _EXPECTED_DELETE_FAILURES
             )
             if exc.code not in expected:
-                raise
+                raise AssertionError(
+                    f"unexpected {operation['action']} failure code: {exc.code}"
+                ) from exc
             if state != before:
                 raise AssertionError("failed request was not atomic") from exc
             failure = exc.as_dict()
@@ -328,6 +325,11 @@ def _replay(
         else:
             if state != before:
                 raise AssertionError("router mutated its input state")
+            if updated.get("topology") != state["topology"]:
+                raise AssertionError("router changed topology")
+            for key in ("version", "model"):
+                if key in state and updated.get(key) != state[key]:
+                    raise AssertionError(f"router changed {key}")
             assert_scale_state(updated)
             expected_memberships = dict(old_memberships)
             if operation["action"] == "create":

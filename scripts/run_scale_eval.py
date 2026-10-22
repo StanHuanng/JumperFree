@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -26,8 +27,8 @@ def main() -> int:
     parser.add_argument("--timings-out", type=Path)
     parser.add_argument("--max-seconds", type=float, default=30.0)
     args = parser.parse_args()
-    if args.max_seconds <= 0:
-        parser.error("--max-seconds must be greater than zero")
+    if not math.isfinite(args.max_seconds) or args.max_seconds <= 0:
+        parser.error("--max-seconds must be finite and greater than zero")
 
     started = time.perf_counter()
     report = run_scale_evaluation(
