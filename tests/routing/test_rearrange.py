@@ -19,6 +19,19 @@ from jumperfree.routing.rearrange import (
 )
 from jumperfree.routing.steiner import crossbar_create_net, crossbar_init_state
 
+ORDER_CASES_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "rearrange_order_cases.json"
+)
+
+
+def order_case_state(name: str) -> dict[str, object]:
+    cases = json.loads(ORDER_CASES_PATH.read_text(encoding="utf-8"))
+    case = cases[name]
+    state = crossbar_init_state(case["topology"])
+    for _operation, net_id, nodes in case["operations"][:2]:
+        state = crossbar_create_net(state, net_id, nodes)
+    return state
+
 
 def blocked_state(*, with_side_net: bool = False) -> dict[str, object]:
     topology = small_topology(chips=2, x_lines=3, y_lines=2, links_per_pair=1)
@@ -52,6 +65,112 @@ def three_link_blocked_state() -> dict[str, object]:
 
 
 class RearrangeTests(unittest.TestCase):
+    def test_reverse_retry_recovers_deterministically(self) -> None:
+        state = order_case_state("recovery")
+        snapshot = copy.deepcopy(state)
+
+        first, stats = crossbar_create_net_with_rearrange(
+            state,
+            "new",
+            ["N4", "N5"],
+            max_moves=18,
+            max_states=4,
+            max_rip_nets=2,
+        )
+        second, second_stats = crossbar_create_net_with_rearrange(
+            state,
+            "new",
+            ["N5", "N4"],
+            max_moves=18,
+            max_states=4,
+            max_rip_nets=2,
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(stats, second_stats)
+        self.assertEqual(stats, {
+            "moves": 18,
+            "rearrange_attempted": True,
+            "rearranged_nets": ["a", "b"],
+            "states_explored": 4,
+        })
+        self.assertEqual(state, snapshot)
+        points = [point for net in first["nets"].values() for point in net["crosspoints"]]
+        assignments = {name: net["nodes"] for name, net in first["nets"].items()}
+        self.assertEqual(find_shorts(first["topology"], points, assignments), [])
+
+    def test_reverse_retry_obeys_exact_budgets_and_is_atomic(self) -> None:
+        state = order_case_state("recovery")
+        snapshot = copy.deepcopy(state)
+
+        for limits, explored in (
+            ({"max_moves": 18, "max_states": 3}, 3),
+            ({"max_moves": 17, "max_states": 4}, 4),
+        ):
+            with self.subTest(limits=limits), self.assertRaises(RouteError) as caught:
+                crossbar_create_net_with_rearrange(
+                    state,
+                    "new",
+                    ["N4", "N5"],
+                    max_rip_nets=2,
+                    **limits,
+                )
+            self.assertEqual(caught.exception.code, "NO_FREE_PATH")
+            self.assertEqual(caught.exception.details["states_explored"], explored)
+            self.assertEqual(state, snapshot)
+
+    def test_first_pass_success_is_preserved(self) -> None:
+        state = order_case_state("preserve")
+        snapshot = copy.deepcopy(state)
+
+        routed, stats = crossbar_create_net_with_rearrange(
+            state,
+            "new",
+            ["N4", "N5"],
+            max_moves=18,
+            max_states=4,
+            max_rip_nets=2,
+        )
+
+        self.assertIn("new", routed["nets"])
+        self.assertEqual(stats, {
+            "moves": 18,
+            "rearrange_attempted": True,
+            "rearranged_nets": ["a", "b"],
+            "states_explored": 3,
+        })
+        self.assertEqual(state, snapshot)
+
+    def test_reverse_retry_handles_candidate_and_unexpected_errors(self) -> None:
+        for code in ("NO_FREE_PATH", "UNEXPECTED"):
+            state = order_case_state("recovery")
+            snapshot = copy.deepcopy(state)
+            retry_error = RouteError(code, "retry")
+
+            def route(working, net_id, nodes):
+                if net_id == "b" and sorted(working["nets"]) == ["new"]:
+                    raise retry_error
+                return crossbar_create_net(working, net_id, nodes)
+
+            with self.subTest(code=code), mock.patch(
+                "jumperfree.routing.rearrange.crossbar_create_net", side_effect=route
+            ):
+                with self.assertRaises(RouteError) as caught:
+                    crossbar_create_net_with_rearrange(
+                        state,
+                        "new",
+                        ["N4", "N5"],
+                        max_moves=18,
+                        max_states=4,
+                        max_rip_nets=2,
+                    )
+            if code == "NO_FREE_PATH":
+                self.assertEqual(caught.exception.code, "NO_FREE_PATH")
+                self.assertEqual(caught.exception.details["states_explored"], 4)
+            else:
+                self.assertIs(caught.exception, retry_error)
+            self.assertEqual(state, snapshot)
+
     def test_three_link_blockers_require_k3(self) -> None:
         state = three_link_blocked_state()
         snapshot = copy.deepcopy(state)

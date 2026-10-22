@@ -42,7 +42,7 @@
 
 **多跳 Steiner 路由（Stage 1.6）**：从编号最小的成员开始，反复以确定性的 0/1 代价最短路（固定接线代价 0、每个新闭合交叉点代价 1）把最近的未连接成员接到当前树上。跨芯片固定链路两端和同线节点按真实电气连接一起占用；每次成功后再运行短接检查。
 
-**有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，以廉价 blocking probe 排序候选，并试移除可配置的至多 K 个既有 net（`--max-rip-nets`，默认 3），先路由新 net，再用 Steiner 近似重路由候选 net。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计；它仍不是全局最优算法。
+**有界局部重排（Stage 2，部分完成）**：`route xbar create --rearrange` 会先尝试普通建网；遇到 `NO_FREE_PATH` 后，以廉价 blocking probe 排序候选，并试移除可配置的至多 K 个既有 net（`--max-rip-nets`，默认 3），先路由新 net，再用 Steiner 近似重路由候选 net。完整首轮搜索失败且状态预算尚有余量时，只会把首个已成功路由新 net 和第一个既有 net 的双 net 组合重试一次，并以反向字典序重路由既有 net；该回退额外占用一个状态，不改变候选排名、组合顺序或任何首轮成功结果。搜索以既有 net 的 line 与 crosspoint 集合对称差之和作为 `C_move`，受 `--max-moves` 与 `--max-states` 限制，并在 `ROUTE_JSON.rearrange` 报告统计；它仍不是全局最优算法，单次选择性回退仍可能漏掉可行顺序。
 
 **评估工具（Stage 2.5，部分完成）**：`scripts/run_eval.py` 在 1–3 颗芯片、2–3 条 X/Y 线的小拓扑上生成确定性的随机增删 net 工作负载，对比纯 Steiner 与有界重排，统计成功率、移动/搜索状态、预算遗漏、参照一致率以及短接/线独占违规。参照会穷举移除至多两个既有 net 的组合及重路由顺序；它只在相同局部重排邻域内穷举，仍使用 Steiner 建路，不是全局最优参照。
 
