@@ -8,6 +8,9 @@ from unittest import mock
 
 from jumperfree.routing.crossbar import small_topology
 from jumperfree.routing.eval import (
+    REFERENCE_MAX_NETS,
+    REFERENCE_MAX_NODES,
+    _rearrange_router,
     _run_router,
     aggregate_metrics,
     check_constraints,
@@ -21,9 +24,45 @@ from jumperfree.routing.steiner import crossbar_create_net, crossbar_init_state
 GOLDEN_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "eval_golden_seed1_trials2.json"
 )
+ORDER_CASES_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "rearrange_order_cases.json"
+)
 
 
 class EvalTests(unittest.TestCase):
+    def test_rearrange_order_fixtures_match_the_local_oracle(self) -> None:
+        cases = json.loads(ORDER_CASES_PATH.read_text(encoding="utf-8"))
+        records = []
+        for name in sorted(cases):
+            case = cases[name]
+            case_records = _run_router(
+                case["topology"],
+                case["operations"],
+                _rearrange_router(18, 4, 2),
+                reference_max_nodes=REFERENCE_MAX_NODES,
+                reference_max_nets=REFERENCE_MAX_NETS,
+            )
+            with self.subTest(name=name):
+                self.assertEqual(
+                    [record["accepted"] for record in case_records],
+                    [True, True, True],
+                )
+                self.assertTrue(all(record["shorts_found"] == 0 for record in case_records))
+                self.assertTrue(all(
+                    record["line_exclusivity_violations"] == 0
+                    for record in case_records
+                ))
+            records.extend(case_records)
+
+        metrics = aggregate_metrics(records)
+        self.assertEqual(metrics["attempts"], 6)
+        self.assertEqual(metrics["success_rate"], 1)
+        self.assertEqual(metrics["budget_misses"], 0)
+        self.assertEqual(
+            metrics["compared_to_reference"],
+            {"cases": 6, "agreement_rate": 1},
+        )
+
     def test_metric_aggregation_including_empty_input(self) -> None:
         records = [
             {
