@@ -8,7 +8,7 @@ import json
 import random
 from typing import Any, Callable, Iterable, Sequence
 
-from .crossbar import Vertex, build_resource_graph, find_shorts
+from .crossbar import ResourceGraph, Vertex, build_resource_graph, find_shorts
 from .model import RouteError
 from .rearrange import crossbar_create_net_with_rearrange
 from .steiner import crossbar_create_net, crossbar_delete_net, crossbar_init_state
@@ -117,20 +117,9 @@ def _closed_edge(point: Sequence[object]) -> tuple[Vertex, Vertex]:
     return left, right
 
 
-def assert_scale_state(state: dict[str, Any]) -> dict[str, int]:
-    """Assert shorts, exclusive ownership, connectivity, and endpoint isolation."""
-
-    graph = build_resource_graph(state["topology"])
-    lines = [tuple(line) for net in state["nets"].values() for line in net["lines"]]
-    if len(lines) != len(set(lines)):
-        raise AssertionError("exclusive chip line is owned by more than one net")
-
-    points = [point for net in state["nets"].values() for point in net["crosspoints"]]
-    assignments = {net_id: net["nodes"] for net_id, net in state["nets"].items()}
-    shorts = find_shorts(graph, points, assignments)
-    if shorts:
-        raise AssertionError(f"electrical short detected: {shorts}")
-
+def _component_roots(
+    graph: ResourceGraph, points: Iterable[Sequence[object]]
+) -> dict[Vertex, Vertex]:
     parent = {vertex: vertex for vertex in graph.vertices}
 
     def find(vertex: Vertex) -> Vertex:
@@ -148,19 +137,71 @@ def assert_scale_state(state: dict[str, Any]) -> dict[str, int]:
         union(left, right)
     for point in points:
         union(*_closed_edge(point))
+    return {vertex: find(vertex) for vertex in graph.vertices}
 
+
+def assert_scale_state(state: dict[str, Any]) -> dict[str, int]:
+    """Assert shorts, exclusive ownership, connectivity, and endpoint isolation."""
+
+    graph = build_resource_graph(state["topology"])
+    lines = [tuple(line) for net in state["nets"].values() for line in net["lines"]]
+    if len(lines) != len(set(lines)):
+        raise AssertionError("exclusive chip line is owned by more than one net")
+
+    points = [point for net in state["nets"].values() for point in net["crosspoints"]]
+    assignments = {net_id: net["nodes"] for net_id, net in state["nets"].items()}
+    shorts = find_shorts(graph, points, assignments)
+    if shorts:
+        raise AssertionError(f"electrical short detected: {shorts}")
+
+    global_roots = _component_roots(graph, points)
     external = [vertex for vertex in graph.vertices if isinstance(vertex, str)]
+    net_roots: dict[str, Vertex] = {}
+    component_owners: dict[Vertex, str] = {}
     for net_id, net in sorted(state["nets"].items()):
         members = list(net["nodes"])
-        roots = {find(member) for member in members}
+        roots = {global_roots[member] for member in members}
         if len(roots) != 1:
             raise AssertionError(f"declared members of {net_id} are not electrically connected")
         root = next(iter(roots))
-        joined = sorted(node for node in external if find(node) == root)
+        if root in component_owners:
+            raise AssertionError(
+                f"nets {component_owners[root]} and {net_id} share an electrical component"
+            )
+        component_owners[root] = net_id
+        net_roots[net_id] = root
+
+    for net_id, net in sorted(state["nets"].items()):
+        root = net_roots[net_id]
+        joined = sorted(node for node in external if global_roots[node] == root)
+        members = list(net["nodes"])
         if joined != members:
             raise AssertionError(
                 f"net {net_id} electrically joins undeclared endpoints: "
                 f"declared={members}, joined={joined}"
+            )
+
+    for net_id, net in sorted(state["nets"].items()):
+        root = net_roots[net_id]
+        for point in net["crosspoints"]:
+            left, right = _closed_edge(point)
+            if global_roots[left] != root or global_roots[right] != root:
+                raise AssertionError(
+                    f"net {net_id} owns a crosspoint outside its electrical component"
+                )
+
+        members = list(net["nodes"])
+        local_roots = _component_roots(graph, net["crosspoints"])
+        local_root = local_roots[members[0]]
+        actual_lines = {
+            vertex
+            for vertex in graph.vertices
+            if isinstance(vertex, tuple) and local_roots[vertex] == local_root
+        }
+        declared_lines = {tuple(line) for line in net["lines"]}
+        if declared_lines != actual_lines:
+            raise AssertionError(
+                f"net {net_id} declared lines do not match its electrical component"
             )
     return {
         "line_exclusivity_violations": 0,
@@ -188,17 +229,39 @@ def _bounded_router(max_moves: int, max_states: int, max_rip_nets: int) -> Scale
         members: Iterable[str],
         operation: ScaleOperation,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        budgets = operation.get("budgets", {})
+        budgets = _effective_budgets(
+            operation,
+            max_moves=max_moves,
+            max_states=max_states,
+            max_rip_nets=max_rip_nets,
+        )
         return crossbar_create_net_with_rearrange(
             state,
             net_id,
             members,
-            max_moves=int(budgets.get("max_moves", max_moves)),
-            max_states=int(budgets.get("max_states", max_states)),
-            max_rip_nets=int(budgets.get("max_rip_nets", max_rip_nets)),
+            max_moves=budgets["max_moves"],
+            max_states=budgets["max_states"],
+            max_rip_nets=budgets["max_rip_nets"],
         )
 
     return route
+
+
+def _effective_budgets(
+    operation: ScaleOperation,
+    *,
+    max_moves: int,
+    max_states: int,
+    max_rip_nets: int,
+) -> dict[str, int]:
+    probe = operation.get("budgets", {})
+    return {
+        "max_moves": min(max_moves, int(probe.get("max_moves", max_moves))),
+        "max_rip_nets": min(
+            max_rip_nets, int(probe.get("max_rip_nets", max_rip_nets))
+        ),
+        "max_states": min(max_states, int(probe.get("max_states", max_states))),
+    }
 
 
 def _replay(
@@ -208,6 +271,7 @@ def _replay(
     *,
     max_moves: int,
     max_states: int,
+    max_rip_nets: int = DEFAULT_MAX_RIP_NETS,
 ) -> dict[str, Any]:
     state = crossbar_init_state(topology)
     outcomes: list[dict[str, Any]] = []
@@ -219,6 +283,12 @@ def _replay(
     delete_missing = 0
     assert_scale_state(state)
     for index, operation in enumerate(operations):
+        budgets = _effective_budgets(
+            operation,
+            max_moves=max_moves,
+            max_states=max_states,
+            max_rip_nets=max_rip_nets,
+        )
         before = copy.deepcopy(state)
         old_memberships = {
             net_id: list(net["nodes"]) for net_id, net in state["nets"].items()
@@ -248,10 +318,7 @@ def _replay(
                 raise AssertionError("failed request was not atomic") from exc
             failure = exc.as_dict()
             states = int(exc.details.get("states_explored", 0))
-            operation_max_states = int(
-                operation.get("budgets", {}).get("max_states", max_states)
-            )
-            if states > operation_max_states:
+            if states > budgets["max_states"]:
                 raise AssertionError("failed request exceeded the state budget") from exc
             assert_scale_state(state)
             if operation["action"] == "create":
@@ -283,16 +350,10 @@ def _replay(
                             tuple(item) for item in updated["nets"][existing_id][resource]
                         }
                         actual_moves += len(old_resources ^ new_resources)
-                operation_max_moves = int(
-                    operation.get("budgets", {}).get("max_moves", max_moves)
-                )
-                operation_max_states = int(
-                    operation.get("budgets", {}).get("max_states", max_states)
-                )
                 if (
-                    actual_moves > operation_max_moves
-                    or moves > operation_max_moves
-                    or states > operation_max_states
+                    actual_moves > budgets["max_moves"]
+                    or moves > budgets["max_moves"]
+                    or states > budgets["max_states"]
                 ):
                     raise AssertionError("router exceeded an evaluation budget")
                 if actual_moves != moves:
@@ -311,7 +372,7 @@ def _replay(
         outcomes.append({
             "accepted": accepted,
             "action": operation["action"],
-            "budgets": operation.get("budgets"),
+            "budgets": budgets,
             "case": operation["case"],
             "failure": failure,
             "index": index,
@@ -372,6 +433,7 @@ def run_scale_evaluation(
             router,
             max_moves=move_budget,
             max_states=state_budget,
+            max_rip_nets=rip_budget,
         )
         results.append({"router": name, **result})
     return {

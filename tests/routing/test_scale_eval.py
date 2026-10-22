@@ -84,12 +84,27 @@ class ScaleEvaluationTests(unittest.TestCase):
         self.assertEqual(rearranged["outcomes"][4]["moves"], 7)
 
     def test_zero_and_exhausted_budgets_report_failures(self) -> None:
-        zero = run_scale_evaluation(
-            seed=7, trials=5, max_moves=0, max_states=0, max_rip_nets=0
-        )
-        result = zero["results"][1]["outcomes"][4]
+        for cap in (0, 1):
+            with self.subTest(cap=cap):
+                report = run_scale_evaluation(
+                    seed=7,
+                    trials=5,
+                    max_moves=cap,
+                    max_states=cap,
+                    max_rip_nets=cap,
+                )
+                for router in report["results"]:
+                    for outcome in router["outcomes"]:
+                        self.assertLessEqual(outcome["moves"], cap)
+                        self.assertLessEqual(outcome["states"], cap)
+                        self.assertLessEqual(outcome["budgets"]["max_moves"], cap)
+                        self.assertLessEqual(outcome["budgets"]["max_states"], cap)
+                        self.assertLessEqual(outcome["budgets"]["max_rip_nets"], cap)
+                probes = report["results"][1]["outcomes"][2:4]
+                self.assertTrue(all(not probe["accepted"] for probe in probes))
+                self.assertTrue(all(probe["states"] <= cap for probe in probes))
+        result = report["results"][1]["outcomes"][4]
         self.assertFalse(result["accepted"])
-        self.assertEqual(result["failure"]["details"]["states_explored"], 0)
         exhausted = run_scale_evaluation(
             seed=7, trials=5, max_moves=6, max_states=1, max_rip_nets=1
         )
@@ -123,6 +138,15 @@ class ScaleEvaluationTests(unittest.TestCase):
         ), self.assertRaisesRegex(AssertionError, "short detected"):
             assert_scale_state(state)
 
+        shared = crossbar_init_state(topology)
+        shared = crossbar_create_net(shared, "a", ["BB01", "BB02"])
+        shared = crossbar_create_net(shared, "b", ["BB09", "BB10"])
+        shared["nets"]["a"]["crosspoints"].append(["A", 8, 1])
+        with mock.patch(
+            "jumperfree.routing.scale_eval.find_shorts", return_value=[]
+        ), self.assertRaisesRegex(AssertionError, "share an electrical component"):
+            assert_scale_state(shared)
+
         disconnected = copy.deepcopy(state)
         disconnected["nets"]["span"]["crosspoints"] = []
         with self.assertRaisesRegex(AssertionError, "not electrically connected"):
@@ -132,6 +156,20 @@ class ScaleEvaluationTests(unittest.TestCase):
         joined["topology"]["node_attachments"]["GHOST"] = ["A", "X", 8]
         with self.assertRaisesRegex(AssertionError, "undeclared endpoints"):
             assert_scale_state(joined)
+
+        foreign = crossbar_create_net(
+            crossbar_init_state(topology), "a", ["BB01", "BB02"]
+        )
+        foreign["nets"]["a"]["crosspoints"].append(["B", 10, 1])
+        with self.assertRaisesRegex(AssertionError, "crosspoint outside"):
+            assert_scale_state(foreign)
+
+        for lines in ([], state["nets"]["span"]["lines"] + [["A", "X", 7]]):
+            with self.subTest(lines=lines):
+                corrupt = copy.deepcopy(state)
+                corrupt["nets"]["span"]["lines"] = lines
+                with self.assertRaisesRegex(AssertionError, "electrical component"):
+                    assert_scale_state(corrupt)
 
     def test_replay_detects_mutation_budget_membership_and_failed_atomicity(self) -> None:
         topology = v5_scale_topology()
@@ -203,6 +241,64 @@ class ScaleEvaluationTests(unittest.TestCase):
         with self.assertRaises(RouteError) as caught:
             _replay(topology, operations[:1], invalid_return, max_moves=64, max_states=32)
         self.assertEqual(caught.exception.code, "INVALID_CROSSPOINT")
+
+        for extra_line in (False, True):
+            with self.subTest(extra_line=extra_line):
+                def corrupt_lines(state, net_id, members, operation):
+                    updated = crossbar_create_net(state, net_id, members)
+                    if extra_line:
+                        updated["nets"][net_id]["lines"].append(["A", "X", 7])
+                    else:
+                        updated["nets"][net_id]["lines"] = []
+                    return updated, {"moves": 0, "states_explored": 0}
+
+                with self.assertRaisesRegex(AssertionError, "electrical component"):
+                    _replay(
+                        topology,
+                        operations[:1],
+                        corrupt_lines,
+                        max_moves=64,
+                        max_states=32,
+                    )
+
+    def test_crosspoint_owned_by_another_net_cannot_hide_endpoint_join(self) -> None:
+        topology = v5_scale_topology()
+        state = crossbar_init_state(topology)
+        state = crossbar_create_net(state, "a", ["BB01", "BB02"])
+        state = crossbar_create_net(state, "b", ["BB09", "BB10"])
+        state["nets"]["a"]["crosspoints"].append(["B", 10, 1])
+        with self.assertRaisesRegex(AssertionError, "undeclared endpoints"):
+            assert_scale_state(state)
+
+        operations = [
+            {
+                "action": "create",
+                "case": "test",
+                "members": ["BB01", "BB02"],
+                "net": "a",
+            },
+            {
+                "action": "create",
+                "case": "test",
+                "members": ["BB09", "BB10"],
+                "net": "b",
+            },
+        ]
+
+        def corrupt_owner(state, net_id, members, operation):
+            updated = crossbar_create_net(state, net_id, members)
+            if net_id == "b":
+                updated["nets"]["a"]["crosspoints"].append(["B", 10, 1])
+            return updated, {"moves": 0, "states_explored": 0}
+
+        with self.assertRaisesRegex(AssertionError, "undeclared endpoints"):
+            _replay(
+                topology,
+                operations,
+                corrupt_owner,
+                max_moves=64,
+                max_states=32,
+            )
 
     def test_plain_router_and_missing_delete_failure(self) -> None:
         topology = v5_scale_topology()
