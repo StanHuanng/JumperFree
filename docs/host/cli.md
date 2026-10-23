@@ -42,7 +42,7 @@ python -m jumperfree host set --clip 3 --rgb 0,64,255 --port /dev/ttyUSB0
 python -m jumperfree host status --port /dev/ttyUSB0 --baudrate 115200 --timeout 1
 ```
 
-`/dev/ttyUSB0` 只是端口示例，Windows 可按实际枚举结果填写 `COM3` 等。`--baudrate` 默认 115200，`--timeout` 默认 1 秒，并同时用于读和写；超时必须是有限正数。串口使用 pyserial 默认的 8N1、无流控参数，需与后续 F103 固件一致。这些是软件默认值，不代表已经确定或实测的板级参数。
+`/dev/ttyUSB0` 只是端口示例，Windows 可按实际枚举结果填写 `COM3` 等。`--baudrate` 默认 115200，`--timeout` 默认 1 秒，并同时用于读和写；超时必须是大于 0 且不超过 3600 秒的有限数值，否则在打开串口前返回 `INVALID_SERIAL_CONFIG`。串口打开、写入或读取时的 `OverflowError` 也会转换为 `INVALID_SERIAL_CONFIG`，CLI 输出结构化 `HOST_JSON` 错误。串口使用 pyserial 默认的 8N1、无流控参数，需与后续 F103 固件一致。这些是软件默认值，不代表已经确定或实测的板级参数。
 
 F103 必须另行提供符合 [JF1 协议](protocol.md) 的固件，本仓库没有实现该固件。BluePill 具体型号、USB-UART 器件、UART 外设、TX/RX/GND 引脚、电平与供电连接、WS2812 数据引脚及 Clip 灯序映射均为 **TBD**。引脚表暂不指定；未确认接线前，上述命令仅作为接口示例。
 

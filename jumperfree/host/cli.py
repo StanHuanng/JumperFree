@@ -21,7 +21,9 @@ def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
         connection.add_argument("--mock", action="store_true", help="use an in-memory LED peer")
         connection.add_argument("--port", help="USB-UART serial port (requires optional pyserial)")
         command.add_argument("--baudrate", type=int, help="serial only (default: 115200)")
-        command.add_argument("--timeout", type=float, help="serial only (default: 1 second)")
+        command.add_argument(
+            "--timeout", type=float, help="serial only, 0 < seconds <= 3600 (default: 1 second)",
+        )
         if name in ("set", "clear"):
             command.add_argument("--clip", type=int, required=True)
         if name == "set":

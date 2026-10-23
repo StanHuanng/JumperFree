@@ -11,6 +11,9 @@ from .errors import HostError
 from .protocol import CLIP_COUNT, MAX_LINE_BYTES, parse_request
 
 
+MAX_SERIAL_TIMEOUT = 3600
+
+
 class Transport(Protocol):
     def write(self, data: bytes) -> int:
         """Return the number of bytes written, or raise OSError."""
@@ -70,7 +73,7 @@ class MockTransport:
 
 
 class SerialTransport:
-    """Optional pyserial adapter with finite read/write timeouts and bounded reads."""
+    """Optional pyserial adapter with read/write timeouts in (0, 3600] seconds."""
 
     def __init__(self, port: str, baudrate: int = 115200, timeout: float = 1.0) -> None:
         try:
@@ -78,14 +81,14 @@ class SerialTransport:
                 isinstance(port, str) and bool(port.strip())
                 and type(baudrate) is int and baudrate > 0
                 and not isinstance(timeout, bool) and isinstance(timeout, (int, float))
-                and math.isfinite(timeout) and timeout > 0
+                and math.isfinite(timeout) and 0 < timeout <= MAX_SERIAL_TIMEOUT
             )
         except OverflowError:
             valid_config = False
         if not valid_config:
             raise HostError(
                 "INVALID_SERIAL_CONFIG",
-                "port, positive baudrate and finite positive timeout required",
+                "port, positive baudrate and finite timeout in (0, 3600] seconds required",
             )
         try:
             serial = importlib.import_module("serial")
@@ -103,10 +106,16 @@ class SerialTransport:
             raise HostError("TRANSPORT_ERROR", str(exc), operation="open") from exc
 
     def write(self, data: bytes) -> int:
-        return self._serial.write(data)
+        try:
+            return self._serial.write(data)
+        except OverflowError as exc:
+            raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
 
     def readline(self) -> bytes:
-        return self._serial.readline(MAX_LINE_BYTES + 1)
+        try:
+            return self._serial.readline(MAX_LINE_BYTES + 1)
+        except OverflowError as exc:
+            raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
 
     def close(self) -> None:
         self._serial.close()

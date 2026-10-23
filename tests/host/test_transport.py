@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import unittest
 from unittest import mock
 
@@ -65,6 +66,8 @@ class SerialTransportTests(unittest.TestCase):
             ("port", 115200, 0), ("port", 115200, -1), ("port", 115200, None),
             ("port", 115200, "1"), ("port", 115200, True),
             ("port", 115200, float("inf")), ("port", 115200, float("nan")),
+            ("port", 115200, math.nextafter(3600.0, math.inf)),
+            ("port", 115200, 3601), ("port", 115200, 1e308),
             ("port", 115200, 10**1000),
         )
         with mock.patch("jumperfree.host.transport.importlib.import_module") as load:
@@ -94,6 +97,19 @@ class SerialTransportTests(unittest.TestCase):
         transport.close()
         connection.close.assert_called_once_with()
 
+    def test_maximum_serial_timeout_is_accepted(self) -> None:
+        for timeout in (3600, 3600.0):
+            with self.subTest(timeout=timeout):
+                serial_module = mock.Mock()
+                with mock.patch(
+                    "jumperfree.host.transport.importlib.import_module", return_value=serial_module,
+                ):
+                    transport = SerialTransport("/dev/test", timeout=timeout)
+                serial_module.Serial.assert_called_once_with(
+                    port="/dev/test", baudrate=115200, timeout=timeout, write_timeout=timeout,
+                )
+                transport.close()
+
     def test_serial_open_failures(self) -> None:
         for error in (OSError("missing port"), ValueError("unsupported baudrate")):
             with self.subTest(error=error):
@@ -114,6 +130,34 @@ class SerialTransportTests(unittest.TestCase):
             "jumperfree.host.transport.importlib.import_module", return_value=serial_module,
         ):
             with self.assertRaises(HostError) as raised:
-                SerialTransport("/dev/test", timeout=1e308)
+                SerialTransport("/dev/test", timeout=1.0)
+        serial_module.Serial.assert_called_once_with(
+            port="/dev/test", baudrate=115200, timeout=1.0, write_timeout=1.0,
+        )
         self.assertEqual(raised.exception.code, "INVALID_SERIAL_CONFIG")
         self.assertIsInstance(raised.exception.__cause__, OverflowError)
+
+    def test_serial_io_overflow_is_invalid_configuration(self) -> None:
+        for operation, args in (("write", (b"JF1 STATUS\n",)), ("readline", ())):
+            with self.subTest(operation=operation):
+                serial_module = mock.Mock()
+                connection = serial_module.Serial.return_value
+                error = OverflowError("timeout exceeds platform limit")
+                getattr(connection, operation).side_effect = error
+                with mock.patch(
+                    "jumperfree.host.transport.importlib.import_module", return_value=serial_module,
+                ):
+                    transport = SerialTransport("/dev/test")
+                serial_module.Serial.assert_called_once_with(
+                    port="/dev/test", baudrate=115200, timeout=1.0, write_timeout=1.0,
+                )
+                with self.assertRaises(HostError) as raised:
+                    getattr(transport, operation)(*args)
+                self.assertEqual(raised.exception.code, "INVALID_SERIAL_CONFIG")
+                self.assertEqual(raised.exception.message, str(error))
+                self.assertIs(raised.exception.__cause__, error)
+                getattr(connection, operation).assert_called_once_with(
+                    *(args if operation == "write" else (513,)),
+                )
+                transport.close()
+                connection.close.assert_called_once_with()
