@@ -18,5 +18,3 @@ EXAMPLE_FRAMES = [
     b"JF1 CLRALL\n", b"JF1 SET 0 0 255 0\n", b"JF1 SET 2 255 0 0\n",
     b"JF1 SET 8 255 0 0\n", b"JF1 SET 10 255 0 0\n", b"JF1 SET 15 0 255 0\n",
 ]
-
-

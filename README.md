@@ -116,6 +116,9 @@ python3 scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json
 
 ```text
 jumperfree/            包入口（python3 -m jumperfree）
+  core/               共享纯函数：schema 常量、规范 JSON、CRC32、错误基类与错误信封
+  board/              板级层：Clip LED 指引编译（compile_led_plan / LedPlan）
+  service/            应用服务层：host guide 等需要同时读路由状态与驱动设备的编排
   host/               Stage-1 Clip LED Host：JF1 协议、Mock/可选串口与 CLI
   routing/model.py     路由模型：状态、建网、删网、查询、错误码
   routing/crossbar.py  参数化交叉点资源图、拓扑验证与短接检查
@@ -127,6 +130,7 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/scale_eval.py 规模工作负载、安全断言与双路由回放
   routing/scenarios.py 场景 schema、确定性放置与 MCU-zone 适配器
   routing/cli.py       route 子命令
+docs/arch/             架构分层与依赖方向（中文）
 docs/routing/          概览 / 模型 / CLI 文档
 docs/host/             Host 使用说明 / JF1 协议（中文；硬件未验证）
 examples/routing/      状态文件与 MCU/外设路由场景
