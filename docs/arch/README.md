@@ -29,7 +29,7 @@ CH446Q 不可回读，设备读回仅为固件影子，不能证明物理通断�
 | 阶段 | 产出 | 状态 | 硬件 |
 | --- | --- | --- | --- |
 | M0 | host guide 基线 | 已完成 | 否 |
-| audit / layering | core、board、service 拆分与依赖门禁 | 审计工作已完成，分层基础正在评审 | 否 |
+| audit / layering | core、board、service 拆分与依赖门禁 | 已完成（PR #18 并入 main） | 否 |
 | M1 | JF1 共享向量、解析器、架构文档与 ADR | 本 PR | 否 |
 | M2 | BoardProfile、SwitchPlan、compile/verify、route plan | 后续 | 否 |
 | M3 | JF2 主机与 MockDevice、DeviceClient、租约/事务；net 电源轨与 RAIL_CONFLICT（service） | 后续 | 否 |

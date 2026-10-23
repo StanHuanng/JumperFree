@@ -17,7 +17,7 @@ class Jf1VectorTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         path = root / "vectors" / "protocol" / "jf1.vec"
         steps = load_vec(path)
-        self.assertTrue(steps)
+        self.assertEqual(len(steps), 174)  # frozen baseline inventory
         transport = MockTransport()
         try:
             for step in steps:
