@@ -15,7 +15,7 @@
 
 `JumperFree` 是一块由 AI 驱动的无跳线原型板的设想：Agent 只告诉板子「要连什么」（哪些节点属于同一个电气网络），由确定性路由器决定「怎么连」，最后再由板载 MCU 安全地切换模拟开关矩阵。目标是让小型项目原型可以少接杜邦线、少打早期 PCB。
 
-本仓库是这条路线的**第一步：纯软件路由器与仿真**。目前**不包含** CH446Q 驱动、PCB 或固件，也不声称任何硬件已验证。硬件原型实践请见前作 [JumperFree-Board](https://github.com/StanHuanng/JumperFree-Board)。
+本仓库提供**软件路由器与仿真**，以及 **Stage-1 Clip LED Host**：通过 JF1 USB-UART 协议控制外接 F103 的 Clip0–15 RGB LED，支持无硬件 Mock。使用方式见 [Host 中文说明](docs/host/cli.md) 与 [JF1 协议](docs/host/protocol.md)；引脚与 BluePill 型号均为 TBD。目前**不包含** CH446Q 驱动、PCB 或固件，也不声称任何硬件已验证。硬件原型实践请见前作 [JumperFree-Board](https://github.com/StanHuanng/JumperFree-Board)。
 
 ---
 
@@ -82,6 +82,10 @@ python3 -m jumperfree route query
 python3 -m jumperfree route delete --net NET_1
 python3 -m jumperfree route list
 
+# Stage-1 LED Host（内存模拟，无串口依赖）
+python3 -m jumperfree host set --clip 0 --rgb 255,128,0 --mock
+python3 -m jumperfree host status --mock
+
 # 多跳交叉点资源图（独立状态文件 out/crossbar-state.json）
 python3 -m jumperfree route xbar init --topology small --chips 3 --x-lines 4 --y-lines 4
 python3 -m jumperfree route xbar create --net LONG --nodes N0,N4,N11
@@ -110,6 +114,7 @@ python3 scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json
 
 ```text
 jumperfree/            包入口（python3 -m jumperfree）
+  host/               Stage-1 Clip LED Host：JF1 协议、Mock/可选串口与 CLI
   routing/model.py     路由模型：状态、建网、删网、查询、错误码
   routing/crossbar.py  参数化交叉点资源图、拓扑验证与短接检查
   routing/steiner.py   确定性多跳 Steiner 近似与 xbar 状态
@@ -120,6 +125,7 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/scenarios.py 场景 schema、确定性放置与 MCU-zone 适配器
   routing/cli.py       route 子命令
 docs/routing/          概览 / 模型 / CLI 文档
+docs/host/             Host 使用说明 / JF1 协议（中文；硬件未验证）
 examples/routing/      状态文件与 MCU/外设路由场景
 tests/                 标准库 unittest
 scripts/coverage_report.py  行覆盖率报告（要求 100%）
