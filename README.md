@@ -50,6 +50,8 @@
 
 **MCU 夹持区与真实场景（Block 1）**：可选的两排 MCU clip zone 把 MCU pin 映射为独立逻辑节点，并提供 ESP32/Blue Pill 外设组合的可执行场景。设计、schema、来源与实测结果见 [`docs/routing/scenarios.md`](docs/routing/scenarios.md)。两排夹点和适配器次序均为 **`verified:false`** 的设计假设，不代表真实硬件已经确认。
 
+**JumperFree V0.1 软件拓扑**：`route xbar init --topology v01` 提供两颗 16×8 CH446Q 风格芯片、Clip0–15 和 8 条同编号共享 Y 通道的资源图；X8–X15 无外接线。模型及全部硬件假设均为 **`verified:false`**，接线与使用示例见 [V0.1 中文说明](docs/routing/v01-topology.md)。
+
 **当前局限（如实说明）**：stage 1 的旧模型仍是全连接仿真图；xbar 的重排只是少量 net 上的有界搜索，重路由仍采用贪心 Steiner 近似，不是全局最优算法，也不提供 Clos 网络的可重排保证。除非完整资源图的连通性等廉价不变量能够证明不可达，预算内失败只报告“未找到”，不声称硬件拓扑绝对不可路由。
 
 ---
@@ -121,6 +123,7 @@ jumperfree/            包入口（python3 -m jumperfree）
   routing/rearrange.py Stage 2 有界局部重排与 C_move 统计
   routing/eval.py      Stage 2.5 确定性评估与局部穷举参照
   routing/v5_scale.py  未验证接线的 V5 对标资源规模拓扑
+  routing/v01_topology.py  未验证接线的 JumperFree V0.1 双芯片拓扑
   routing/scale_eval.py 规模工作负载、安全断言与双路由回放
   routing/scenarios.py 场景 schema、确定性放置与 MCU-zone 适配器
   routing/cli.py       route 子命令

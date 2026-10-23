@@ -27,6 +27,7 @@ from .scenarios import (
     scenario_to_route_requests,
     scenario_to_topology,
 )
+from .v01_topology import v01_topology
 from .v5_scale import v5_scale_topology
 from .scale_eval import assert_scale_state, make_scale_workload, run_scale_evaluation
 
@@ -50,6 +51,7 @@ __all__ = [
     "load_scenario",
     "scenario_to_route_requests",
     "scenario_to_topology",
+    "v01_topology",
     "v5_scale_topology",
     "assert_scale_state",
     "make_scale_workload",
