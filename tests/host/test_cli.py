@@ -41,23 +41,32 @@ class HostCliTests(unittest.TestCase):
                     "ok": True, "operation": args[0],
                 })
 
-    def test_input_errors_are_structured(self) -> None:
+    def test_input_errors_are_structured_before_opening_serial(self) -> None:
         cases = (
             (("set", "--clip", "0", "--rgb", "1,2"), "INVALID_RGB"),
             (("set", "--clip", "0", "--rgb", "1,2,3,4"), "INVALID_RGB"),
             (("set", "--clip", "0", "--rgb", "1,no,3"), "INVALID_RGB"),
             (("set", "--clip", "0", "--rgb", "1,,3"), "INVALID_RGB"),
             (("set", "--clip", "0", "--rgb", "256,0,0"), "INVALID_RGB"),
+            (("set", "--clip", "0", "--rgb", "0,-1,0"), "INVALID_RGB"),
+            (("set", "--clip", "0", "--rgb", "0,0,256"), "INVALID_RGB"),
+            (("set", "--clip", "-1", "--rgb", "1,2,3"), "CLIP_OUT_OF_RANGE"),
             (("set", "--clip", "16", "--rgb", "1,2,3"), "CLIP_OUT_OF_RANGE"),
             (("clear", "--clip", "-1"), "CLIP_OUT_OF_RANGE"),
+            (("clear", "--clip", "16"), "CLIP_OUT_OF_RANGE"),
         )
         for args, expected in cases:
-            with self.subTest(args=args):
-                code, payload, summary = self.run_cli(*args, "--mock")
-                self.assertEqual(code, 1)
-                self.assertFalse(payload["ok"])
-                self.assertEqual(payload["error"]["code"], expected)
-                self.assertTrue(summary.startswith("HOST FAIL " + expected))
+            for connection in (("--mock",), ("--port", "/dev/test")):
+                with self.subTest(args=args, connection=connection), mock.patch(
+                    "jumperfree.host.cli.SerialTransport",
+                    side_effect=HostError("SERIAL_UNAVAILABLE", "serial unavailable"),
+                ) as serial:
+                    code, payload, summary = self.run_cli(*args, *connection)
+                    serial.assert_not_called()
+                    self.assertEqual(code, 1)
+                    self.assertFalse(payload["ok"])
+                    self.assertEqual(payload["error"]["code"], expected)
+                    self.assertTrue(summary.startswith("HOST FAIL " + expected))
 
     def test_serial_path_and_options_without_pyserial(self) -> None:
         transport = MockTransport()
@@ -94,6 +103,39 @@ class HostCliTests(unittest.TestCase):
             code, payload, _ = self.run_cli("status", "--mock")
         self.assertEqual(code, 1)
         self.assertEqual(payload["error"]["code"], "TRANSPORT_ERROR")
+
+    def test_close_failure_preserves_primary_transaction_error(self) -> None:
+        cases = (
+            (b"", {"code": "TIMEOUT", "message": "no response before transport timeout"}),
+            (b"JF1 ERR BUSY try later\n", {
+                "code": "DEVICE_ERROR", "message": "try later", "details": {"device_code": "BUSY"},
+            }),
+        )
+        for response, primary_error in cases:
+            with self.subTest(response=response):
+                transport = MockTransport([response])
+                with (
+                    mock.patch("jumperfree.host.cli.MockTransport", return_value=transport),
+                    mock.patch.object(transport, "close", side_effect=OSError("close failed")) as close,
+                ):
+                    code, payload, summary = self.run_cli("status", "--mock")
+                close.assert_called_once_with()
+                self.assertEqual(transport.writes, [b"JF1 STATUS\n"])
+                self.assertEqual(code, 1)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(
+                    summary, f"HOST FAIL {primary_error['code']}: {primary_error['message']}",
+                )
+                self.assertEqual(payload["error"], {
+                    **primary_error,
+                    "details": {
+                        **primary_error.get("details", {}),
+                        "close_error": {
+                            "code": "TRANSPORT_ERROR", "message": "close failed",
+                            "details": {"operation": "close"},
+                        },
+                    },
+                })
 
     def test_parser_requires_explicit_connection_and_required_parameters(self) -> None:
         for args in (

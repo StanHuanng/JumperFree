@@ -28,6 +28,8 @@ HOST_JSON {"data":{"command":"SET","values":[0,255,128,0]},"ok":true,"operation"
 
 `data.command` 为协议命令，`data.values` 为应答中的数值。`STATUS` 返回长度为 48 的数组，按 Clip0 的 R/G/B、Clip1 的 R/G/B，直到 Clip15 排列。失败时用 `error` 替代 `data`，含 `code`、`message` 和可选的 `details`。
 
+CLI 在打开串口前校验 Clip/RGB 参数；若事务和关闭连接均失败，保留事务错误，并在 `details.close_error` 中附上关闭错误。
+
 ## 可选串口
 
 只有使用串口时才需要自行安装 `pyserial`；它不是项目的硬依赖：

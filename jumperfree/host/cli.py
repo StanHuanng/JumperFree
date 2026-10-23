@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from .errors import HostError
+from .protocol import validate_request
 from .session import HostSession
 from .transport import MockTransport, SerialTransport
 
@@ -41,11 +42,16 @@ def _parse_rgb(value: str) -> tuple[int, int, int]:
 def run_host(args: argparse.Namespace) -> int:
     try:
         rgb = _parse_rgb(args.rgb) if args.host_command == "set" else (0, 0, 0)
+        if args.host_command == "set":
+            validate_request("SET", (args.clip, *rgb))
+        elif args.host_command == "clear":
+            validate_request("CLR", (args.clip,))
         transport = (
             MockTransport() if args.mock
             else SerialTransport(args.port, args.baudrate, args.timeout)
         )
         session = HostSession(transport)
+        primary_error: HostError | None = None
         try:
             if args.host_command == "set":
                 response = session.set(args.clip, *rgb)
@@ -55,8 +61,16 @@ def run_host(args: argparse.Namespace) -> int:
                 response = session.clear_all()
             else:
                 response = session.status()
+        except HostError as exc:
+            primary_error = exc
+            raise
         finally:
-            session.close()
+            try:
+                session.close()
+            except HostError as exc:
+                if primary_error is None:
+                    raise
+                primary_error.details["close_error"] = exc.as_dict()
         summary = f"HOST {args.host_command} OK"
         payload = {"data": response.as_dict(), "ok": True, "operation": args.host_command}
     except HostError as exc:
