@@ -73,12 +73,16 @@ class SerialTransport:
     """Optional pyserial adapter with finite read/write timeouts and bounded reads."""
 
     def __init__(self, port: str, baudrate: int = 115200, timeout: float = 1.0) -> None:
-        if (
-            not isinstance(port, str) or not port.strip()
-            or type(baudrate) is not int or baudrate <= 0
-            or isinstance(timeout, bool) or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout) or timeout <= 0
-        ):
+        try:
+            valid_config = (
+                isinstance(port, str) and bool(port.strip())
+                and type(baudrate) is int and baudrate > 0
+                and not isinstance(timeout, bool) and isinstance(timeout, (int, float))
+                and math.isfinite(timeout) and timeout > 0
+            )
+        except OverflowError:
+            valid_config = False
+        if not valid_config:
             raise HostError(
                 "INVALID_SERIAL_CONFIG",
                 "port, positive baudrate and finite positive timeout required",
@@ -93,6 +97,8 @@ class SerialTransport:
             self._serial = serial.Serial(
                 port=port, baudrate=baudrate, timeout=timeout, write_timeout=timeout,
             )
+        except OverflowError as exc:
+            raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
         except (OSError, ValueError) as exc:
             raise HostError("TRANSPORT_ERROR", str(exc), operation="open") from exc
 

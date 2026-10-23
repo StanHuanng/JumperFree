@@ -79,6 +79,49 @@ class HostCliTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(transport.closed)
 
+    def test_serial_defaults_without_pyserial(self) -> None:
+        with mock.patch(
+            "jumperfree.host.cli.SerialTransport", return_value=MockTransport(),
+        ) as serial:
+            code, payload, _ = self.run_cli("status", "--port", "/dev/test")
+        serial.assert_called_once_with("/dev/test", 115200, 1.0)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+
+    def test_mock_rejects_explicit_serial_options_before_creating_transport(self) -> None:
+        for command in (
+            ("set", "--clip", "0", "--rgb", "1,2,3"),
+            ("clear", "--clip", "0"), ("clear-all",), ("status",),
+        ):
+            for options in (
+                ("--baudrate", "115200"), ("--baudrate", "0"), ("--baudrate", "-1"),
+                ("--timeout", "1"), ("--timeout", "0"), ("--timeout", "-1"),
+                ("--timeout", "nan"), ("--timeout", "inf"), ("--timeout", "1e1000"),
+                ("--baudrate", "9600", "--timeout", "0.5"),
+            ):
+                with (
+                    self.subTest(command=command, options=options),
+                    mock.patch("jumperfree.host.cli.MockTransport") as mock_transport,
+                    mock.patch("jumperfree.host.cli.SerialTransport") as serial,
+                ):
+                    code, payload, summary = self.run_cli(*command, "--mock", *options)
+                mock_transport.assert_not_called()
+                serial.assert_not_called()
+                self.assertEqual(code, 1)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["error"]["code"], "INVALID_SERIAL_CONFIG")
+                self.assertTrue(summary.startswith("HOST FAIL INVALID_SERIAL_CONFIG:"))
+
+    def test_invalid_serial_options_are_not_replaced_by_defaults(self) -> None:
+        for options in (("--baudrate", "0"), ("--timeout", "0")):
+            with self.subTest(options=options), mock.patch(
+                "jumperfree.host.transport.importlib.import_module",
+            ) as load:
+                code, payload, _ = self.run_cli("status", "--port", "/dev/test", *options)
+            load.assert_not_called()
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["error"]["code"], "INVALID_SERIAL_CONFIG")
+
     def test_missing_pyserial_error(self) -> None:
         with mock.patch(
             "jumperfree.host.transport.importlib.import_module", side_effect=ImportError,

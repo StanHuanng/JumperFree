@@ -20,8 +20,8 @@ def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
         connection = command.add_mutually_exclusive_group(required=True)
         connection.add_argument("--mock", action="store_true", help="use an in-memory LED peer")
         connection.add_argument("--port", help="USB-UART serial port (requires optional pyserial)")
-        command.add_argument("--baudrate", type=int, default=115200)
-        command.add_argument("--timeout", type=float, default=1.0)
+        command.add_argument("--baudrate", type=int, help="serial only (default: 115200)")
+        command.add_argument("--timeout", type=float, help="serial only (default: 1 second)")
         if name in ("set", "clear"):
             command.add_argument("--clip", type=int, required=True)
         if name == "set":
@@ -41,6 +41,10 @@ def _parse_rgb(value: str) -> tuple[int, int, int]:
 
 def run_host(args: argparse.Namespace) -> int:
     try:
+        if args.mock and (args.baudrate is not None or args.timeout is not None):
+            raise HostError(
+                "INVALID_SERIAL_CONFIG", "--baudrate and --timeout cannot be used with --mock",
+            )
         rgb = _parse_rgb(args.rgb) if args.host_command == "set" else (0, 0, 0)
         if args.host_command == "set":
             validate_request("SET", (args.clip, *rgb))
@@ -48,7 +52,11 @@ def run_host(args: argparse.Namespace) -> int:
             validate_request("CLR", (args.clip,))
         transport = (
             MockTransport() if args.mock
-            else SerialTransport(args.port, args.baudrate, args.timeout)
+            else SerialTransport(
+                args.port,
+                115200 if args.baudrate is None else args.baudrate,
+                1.0 if args.timeout is None else args.timeout,
+            )
         )
         session = HostSession(transport)
         primary_error: HostError | None = None

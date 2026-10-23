@@ -65,6 +65,7 @@ class SerialTransportTests(unittest.TestCase):
             ("port", 115200, 0), ("port", 115200, -1), ("port", 115200, None),
             ("port", 115200, "1"), ("port", 115200, True),
             ("port", 115200, float("inf")), ("port", 115200, float("nan")),
+            ("port", 115200, 10**1000),
         )
         with mock.patch("jumperfree.host.transport.importlib.import_module") as load:
             for args in cases:
@@ -105,3 +106,14 @@ class SerialTransportTests(unittest.TestCase):
                         SerialTransport("/dev/test")
                 self.assertEqual(raised.exception.code, "TRANSPORT_ERROR")
                 self.assertEqual(raised.exception.details, {"operation": "open"})
+
+    def test_serial_timeout_overflow_is_invalid_configuration(self) -> None:
+        serial_module = mock.Mock()
+        serial_module.Serial.side_effect = OverflowError("timeout exceeds platform limit")
+        with mock.patch(
+            "jumperfree.host.transport.importlib.import_module", return_value=serial_module,
+        ):
+            with self.assertRaises(HostError) as raised:
+                SerialTransport("/dev/test", timeout=1e308)
+        self.assertEqual(raised.exception.code, "INVALID_SERIAL_CONFIG")
+        self.assertIsInstance(raised.exception.__cause__, OverflowError)
