@@ -16,6 +16,7 @@ from .steiner import (
     crossbar_init_state,
     crossbar_query,
 )
+from .v01_topology import v01_topology
 from .v5_scale import v5_scale_topology
 
 DEFAULT_STATE = Path("out/routing-state.json")
@@ -52,7 +53,7 @@ def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     xbar_commands = xbar.add_subparsers(dest="xbar_command", required=True)
 
     xbar_init = xbar_commands.add_parser("init", help="initialize a crossbar state")
-    xbar_init.add_argument("--topology", choices=("small", "v5-scale"), default="small")
+    xbar_init.add_argument("--topology", choices=("small", "v5-scale", "v01"), default="small")
     xbar_init.add_argument("--topology-file", type=Path)
     xbar_init.add_argument("--chips", type=int, default=2)
     xbar_init.add_argument("--x-lines", type=int, default=4)
@@ -127,6 +128,8 @@ def _run_crossbar(
             topology = _load_topology(args.topology_file)
         elif args.topology == "v5-scale":
             topology = v5_scale_topology()
+        elif args.topology == "v01":
+            topology = v01_topology()
         else:
             topology = small_topology(args.chips, args.x_lines, args.y_lines)
         state = crossbar_init_state(topology)

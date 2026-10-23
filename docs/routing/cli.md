@@ -44,6 +44,16 @@ python3 -m jumperfree route xbar init --topology-file topology.json --state stat
 四个特殊功能端点和芯片链路都是 `verified:false` 的合成假设，不是硬件接线表。若同时传入
 `--topology-file`，文件内容仍然优先，原有默认值与行为不变。
 
+`--topology v01` 选择两颗 16×8 芯片、16 个 Clip 和 8 条同编号共享 Y 通道的
+[JumperFree V0.1 软件拓扑](v01-topology.md)。例如：
+
+```bash
+python3 -m jumperfree route xbar init --topology v01 --state out/v01-state.json
+python3 -m jumperfree route xbar create --net span --nodes Clip0,Clip15 --state out/v01-state.json
+```
+
+V0.1 的接线假设均为 `verified:false`，`--topology-file` 同样优先于该选项。
+
 所有 xbar 命令沿用一行摘要加一行排序键 `ROUTE_JSON` 的输出约定。状态保存每个 net 的成员
 节点、独占芯片线和闭合交叉点；查询同时给出每个 net 的交叉点 hop 数和总体线占用。
 `--rearrange` 默认关闭；启用后仅在普通建网返回 `NO_FREE_PATH` 时进行有界局部重排，成功输出
