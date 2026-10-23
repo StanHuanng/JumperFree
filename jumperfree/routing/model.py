@@ -7,23 +7,13 @@ import hashlib
 from itertools import combinations
 from typing import Any, Iterable
 
+from ..core import JfError
+
 STATE_VERSION = 1
 
 
-class RouteError(ValueError):
+class RouteError(JfError):
     """A structured routing failure that is safe to expose through the CLI."""
-
-    def __init__(self, code: str, message: str, **details: object) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.details = details
-
-    def as_dict(self) -> dict[str, object]:
-        result: dict[str, object] = {"code": self.code, "message": self.message}
-        if self.details:
-            result["details"] = self.details
-        return result
 
 
 def init_state(nodes: int, seed: int = 0, capacity: int = 1) -> dict[str, Any]:

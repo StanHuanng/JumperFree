@@ -57,7 +57,7 @@ HOST_JSON {"data":{"plan":[[0,255,0,0],[15,255,0,0]]},"ok":true,"operation":"gui
 
 `data.plan` 每项为 `[clip,r,g,b]`。指引不修改状态文件，也不发送任何 CH446Q 开关命令，仅提供软件到 RGB LED 的提示，不能建立或验证电气连接。传输失败后立即停止并关闭连接；之前已成功发送的清灯或设色可能已经生效，不会自动重试或回滚。
 
-纯函数 `from jumperfree.host import plan_guide` 接受加载后的 crossbar 状态，返回按 Clip 数字编号排序的 `(clip,r,g,b)` 元组列表；不会修改输入、打开连接或发送命令。
+纯函数 `from jumperfree.board import plan_guide` 接受加载后的 crossbar 状态，返回按 Clip 数字编号排序的 `(clip,r,g,b)` 元组列表；不会修改输入、打开连接或发送命令。板级 `compile_led_plan` 返回冻结的 `LedPlan`；`brightness_cap=64` 仅记录为待实测占位，V0.1 不缩放原有 RGB。状态读取和设备调用由 `jumperfree.service.guide` 编排，顶层 CLI 分发；host 仅负责 JF1 传输与会话。依赖方向见[当前 Python 分层](../arch/layers.md)。
 
 ## 可选串口
 

@@ -7,6 +7,7 @@ from typing import Sequence
 
 from .host.cli import add_host_parser, run_host
 from .routing.cli import add_route_parser, run_route
+from .service.guide import run_guide
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,5 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "host":
+        if args.host_command == "guide":
+            return run_guide(args)
         return run_host(args)
     return run_route(args)

@@ -23,6 +23,9 @@ jobs:
           python -m jumperfree host clear --clip 15 --mock
           python -m jumperfree host clear-all --mock
           python -m jumperfree host status --mock
+          python -m jumperfree route xbar init --topology v01 --state out/guide-smoke.json
+          python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/guide-smoke.json
+          python -m jumperfree host guide --state out/guide-smoke.json --mock
       - name: Timed V5-scale software evaluation
         timeout-minutes: 1
         run: python scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json --max-seconds 30

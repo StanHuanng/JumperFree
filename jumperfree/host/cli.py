@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
+from ..core import canonical_json
 from .errors import HostError
-from .guide import plan_guide
 from .protocol import validate_request
 from .session import HostSession
 from .transport import MockTransport, SerialTransport
@@ -45,16 +44,6 @@ def _parse_rgb(value: str) -> tuple[int, int, int]:
         raise HostError("INVALID_RGB", "--rgb must contain three comma-separated integers") from exc
 
 
-def _load_guide(path: Path) -> list[tuple[int, int, int, int]]:
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise HostError("STATE_NOT_FOUND", f"routing state not found: {path}") from exc
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HostError("INVALID_STATE", f"routing state is unreadable: {path}") from exc
-    return plan_guide(state)
-
-
 def run_host(args: argparse.Namespace) -> int:
     try:
         if args.mock and (args.baudrate is not None or args.timeout is not None):
@@ -66,7 +55,6 @@ def run_host(args: argparse.Namespace) -> int:
             validate_request("SET", (args.clip, *rgb))
         elif args.host_command == "clear":
             validate_request("CLR", (args.clip,))
-        plan = _load_guide(args.state) if args.host_command == "guide" else []
         transport = (
             MockTransport() if args.mock
             else SerialTransport(
@@ -84,10 +72,6 @@ def run_host(args: argparse.Namespace) -> int:
                 response = session.clear(args.clip)
             elif args.host_command == "clear-all":
                 response = session.clear_all()
-            elif args.host_command == "guide":
-                session.clear_all()
-                for clip, r, g, b in plan:
-                    session.set(clip, r, g, b)
             else:
                 response = session.status()
         except HostError as exc:
@@ -101,11 +85,11 @@ def run_host(args: argparse.Namespace) -> int:
                     raise
                 primary_error.details["close_error"] = exc.as_dict()
         summary = f"HOST {args.host_command} OK"
-        data = {"plan": plan} if args.host_command == "guide" else response.as_dict()
+        data = response.as_dict()
         payload = {"data": data, "ok": True, "operation": args.host_command}
     except HostError as exc:
         summary = f"HOST FAIL {exc.code}: {exc.message}"
         payload = {"error": exc.as_dict(), "ok": False, "operation": args.host_command}
     print(summary)
-    print(f"HOST_JSON {json.dumps(payload, sort_keys=True, separators=(',', ':'))}")
+    print(f"HOST_JSON {canonical_json(payload)}")
     return 0 if payload["ok"] else 1
