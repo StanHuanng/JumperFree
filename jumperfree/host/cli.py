@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from .errors import HostError
+from .guide import plan_guide
 from .protocol import validate_request
 from .session import HostSession
 from .transport import MockTransport, SerialTransport
@@ -15,7 +17,7 @@ from .transport import MockTransport, SerialTransport
 def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     host = subparsers.add_parser("host", help="control Clip0–15 RGB LEDs over JF1 UART")
     commands = host.add_subparsers(dest="host_command", required=True)
-    for name in ("set", "clear", "clear-all", "status"):
+    for name in ("set", "clear", "clear-all", "status", "guide"):
         command = commands.add_parser(name, help=f"{name} Clip LEDs")
         connection = command.add_mutually_exclusive_group(required=True)
         connection.add_argument("--mock", action="store_true", help="use an in-memory LED peer")
@@ -28,6 +30,8 @@ def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
             command.add_argument("--clip", type=int, required=True)
         if name == "set":
             command.add_argument("--rgb", required=True, help="R,G,B integers in 0..255")
+        if name == "guide":
+            command.add_argument("--state", type=Path, required=True, help="crossbar state JSON")
 
 
 def _parse_rgb(value: str) -> tuple[int, int, int]:
@@ -41,6 +45,16 @@ def _parse_rgb(value: str) -> tuple[int, int, int]:
         raise HostError("INVALID_RGB", "--rgb must contain three comma-separated integers") from exc
 
 
+def _load_guide(path: Path) -> list[tuple[int, int, int, int]]:
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HostError("STATE_NOT_FOUND", f"routing state not found: {path}") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HostError("INVALID_STATE", f"routing state is unreadable: {path}") from exc
+    return plan_guide(state)
+
+
 def run_host(args: argparse.Namespace) -> int:
     try:
         if args.mock and (args.baudrate is not None or args.timeout is not None):
@@ -52,6 +66,7 @@ def run_host(args: argparse.Namespace) -> int:
             validate_request("SET", (args.clip, *rgb))
         elif args.host_command == "clear":
             validate_request("CLR", (args.clip,))
+        plan = _load_guide(args.state) if args.host_command == "guide" else []
         transport = (
             MockTransport() if args.mock
             else SerialTransport(
@@ -69,6 +84,10 @@ def run_host(args: argparse.Namespace) -> int:
                 response = session.clear(args.clip)
             elif args.host_command == "clear-all":
                 response = session.clear_all()
+            elif args.host_command == "guide":
+                session.clear_all()
+                for clip, r, g, b in plan:
+                    session.set(clip, r, g, b)
             else:
                 response = session.status()
         except HostError as exc:
@@ -82,7 +101,8 @@ def run_host(args: argparse.Namespace) -> int:
                     raise
                 primary_error.details["close_error"] = exc.as_dict()
         summary = f"HOST {args.host_command} OK"
-        payload = {"data": response.as_dict(), "ok": True, "operation": args.host_command}
+        data = {"plan": plan} if args.host_command == "guide" else response.as_dict()
+        payload = {"data": data, "ok": True, "operation": args.host_command}
     except HostError as exc:
         summary = f"HOST FAIL {exc.code}: {exc.message}"
         payload = {"error": exc.as_dict(), "ok": False, "operation": args.host_command}
