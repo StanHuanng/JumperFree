@@ -40,4 +40,12 @@ JSON 记录 `seed`、`trials` 和 `budgets`；使用相同版本代码及这些�
 python3 -m unittest tests.routing.test_eval
 ```
 
+重排的纯软件启发式现会保留所有已成功路由新 net 和第一个既有 net 的双 net 组合，完整首轮
+失败后按原遇见顺序逐个反向重试既有 net；原首轮及首个回退顺序不变，每次重试占用一个
+状态，仍受 `max_moves`、`max_states`、`max_rip_nets` 限制。新增反例
+`tests/routing/fixtures/rearrange_retry_cases.json` 在原恢复案例上加入一个独立旁路 net：旧算法
+只重试无效的首个组合，7 次探索后遗漏邻域 oracle 可行请求；新算法在同样的
+`max_moves=18,max_states=8,max_rip_nets=2` 预算内通过第 8 次探索恢复请求，4 次创建全部接受，
+邻域不一致由 1 降至 0，`C_move=18`，短接与线独占违规均为 0。此改动不保证穷举所有可行顺序。
+
 以上结果均为**纯软件模型评估**，不涉及 CH446Q 开关控制，也不代表硬件或 PCB 已验证。
