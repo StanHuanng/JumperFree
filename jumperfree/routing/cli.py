@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..core import canonical_json
 from .crossbar import small_topology
 from .model import RouteError, create_net, delete_net, init_state, list_nets, query_state
 from .rearrange import crossbar_create_net_with_rearrange
@@ -117,7 +118,7 @@ def _load_topology(path: Path) -> object:
 
 def _emit(summary: str, payload: dict[str, Any]) -> None:
     print(summary)
-    print(f"ROUTE_JSON {json.dumps(payload, sort_keys=True, separators=(',', ':'))}")
+    print(f"ROUTE_JSON {canonical_json(payload)}")
 
 
 def _run_crossbar(
