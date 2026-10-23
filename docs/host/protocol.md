@@ -2,6 +2,10 @@
 
 JF1 是供 Stage-1 Host 和后续 F103 固件对接的行协议。当前实现及测试只覆盖 Python Host 和内存 Mock，不代表串口、固件、灯序或电气连接经过验证。UART 引脚与 BluePill 具体型号均为 **TBD**；其他待定接线见 [Host 使用说明](cli.md)。
 
+## 冻结基线
+
+[vectors/protocol/jf1.vec](../../vectors/protocol/jf1.vec) 是当前 MockTransport 行为的规范冻结基线，包含成功应答、完整 STATUS 与精确错误消息；格式及执行规则见 [共享向量说明](../../vectors/README.md)。后续 Python MockDevice、C 单测与 jf_sim 共用这些向量，JF1 保持兼容，新增协议能力使用并存的 JF2。向量通过仅代表软件一致，未经硬件验证。
+
 ## 帧格式
 
 - ASCII 编码，区分大小写，首个 token 固定为版本 `JF1`。
