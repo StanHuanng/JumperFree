@@ -12,6 +12,13 @@ from unittest import mock
 
 from jumperfree.cli import main
 from jumperfree.routing.crossbar import find_shorts, small_topology
+from jumperfree.routing.eval import (
+    _rearrange_router,
+    _run_router,
+    aggregate_metrics,
+    check_constraints,
+    exhaustive_reference,
+)
 from jumperfree.routing.model import RouteError
 from jumperfree.routing.rearrange import (
     _rank_candidate_nets,
@@ -21,6 +28,9 @@ from jumperfree.routing.steiner import crossbar_create_net, crossbar_init_state
 
 ORDER_CASES_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "rearrange_order_cases.json"
+)
+RETRY_CASE_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "rearrange_retry_cases.json"
 )
 
 
@@ -65,6 +75,85 @@ def three_link_blocked_state() -> dict[str, object]:
 
 
 class RearrangeTests(unittest.TestCase):
+    def test_later_reverse_retry_recovers_oracle_yes_case(self) -> None:
+        case = json.loads(RETRY_CASE_PATH.read_text(encoding="utf-8"))
+        state = crossbar_init_state(case["topology"])
+        for _operation, net_id, nodes in case["operations"][:-1]:
+            state = crossbar_create_net(state, net_id, nodes)
+        _operation, net_id, nodes = case["operations"][-1]
+        snapshot = copy.deepcopy(state)
+        self.assertTrue(exhaustive_reference(state, net_id, nodes))
+        self.assertEqual(_rank_candidate_nets(state, nodes), case["candidate_ids"])
+
+        # The legacy fallback spent its only retry on (a, c). That pair can
+        # recreate new and a, but neither ordering can recreate c. The next
+        # promising pair (b, c) requires c before b to recover the request.
+        for ordered in (("a", "c"), ("c", "a"), ("b", "c")):
+            reduced = copy.deepcopy(state)
+            for name in ordered:
+                del reduced["nets"][name]
+            working = crossbar_create_net(reduced, net_id, nodes)
+            with self.subTest(order=ordered), self.assertRaises(RouteError):
+                for name in ordered:
+                    working = crossbar_create_net(working, name, state["nets"][name]["nodes"])
+
+        first, stats = crossbar_create_net_with_rearrange(
+            state, net_id, nodes, **case["budgets"]
+        )
+        # Reverse both request order and dictionary insertion order; neither
+        # should affect candidate ranking, trials, or the routed result.
+        reordered = {**state, "nets": dict(reversed(list(state["nets"].items())))}
+        second, second_stats = crossbar_create_net_with_rearrange(
+            reordered, net_id, reversed(nodes), **case["budgets"]
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(stats, second_stats)
+        self.assertEqual(stats, case["expected_stats"])
+        self.assertEqual(first["nets"]["a"], state["nets"]["a"])
+        self.assertEqual(
+            {name: net["nodes"] for name, net in first["nets"].items()},
+            {**{name: net["nodes"] for name, net in state["nets"].items()}, net_id: nodes},
+        )
+        self.assertEqual(check_constraints(first), {
+            "line_exclusivity_violations": 0, "shorts_found": 0,
+        })
+        self.assertEqual(state, snapshot)
+
+        for limits, explored in (
+            ({"max_states": case["legacy_states"]}, 7),
+            ({"max_moves": 17}, 8),
+            ({"max_rip_nets": 1}, 3),
+        ):
+            with self.subTest(limits=limits), self.assertRaises(RouteError) as caught:
+                crossbar_create_net_with_rearrange(
+                    state, net_id, nodes, **{**case["budgets"], **limits}
+                )
+            self.assertEqual(caught.exception.code, "NO_FREE_PATH")
+            self.assertEqual(caught.exception.details["states_explored"], explored)
+            self.assertEqual(state, snapshot)
+
+    def test_later_reverse_retry_reduces_oracle_disagreement(self) -> None:
+        case = json.loads(RETRY_CASE_PATH.read_text(encoding="utf-8"))
+        for max_states, accepted, misses, moves, states in (
+            (case["legacy_states"], 3, 1, 0, 7),
+            (case["budgets"]["max_states"], 4, 0, 18, 8),
+        ):
+            with self.subTest(max_states=max_states):
+                records = _run_router(
+                    case["topology"], case["operations"],
+                    _rearrange_router(**{**case["budgets"], "max_states": max_states}),
+                    reference_max_nodes=8, reference_max_nets=4,
+                )
+                metrics = aggregate_metrics(records)
+                self.assertEqual(metrics["accepted"], accepted)
+                self.assertEqual(metrics["budget_misses"], misses)
+                self.assertEqual(metrics["compared_to_reference"]["disagreements"], misses)
+                self.assertEqual(metrics["total_moves"], moves)
+                self.assertTrue(records[-1]["reference"])
+                self.assertEqual(records[-1]["states"], states)
+                self.assertEqual(metrics["shorts_found"], 0)
+                self.assertEqual(metrics["line_exclusivity_violations"], 0)
+
     def test_reverse_retry_recovers_deterministically(self) -> None:
         state = order_case_state("recovery")
         snapshot = copy.deepcopy(state)

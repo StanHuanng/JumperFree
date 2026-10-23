@@ -219,7 +219,7 @@ def crossbar_create_net_with_rearrange(
     # hard bound on routing trials and their storage.
     candidate_ids = _rank_candidate_nets(state, supplied)
     explored = 0
-    retry_ids: tuple[str, str] | None = None
+    retry_sets: list[tuple[str, str]] = []
     for size in range(1, min(rip_budget, len(candidate_ids)) + 1):
         for selected in combinations(candidate_ids, size):
             if explored >= state_budget:
@@ -239,8 +239,8 @@ def crossbar_create_net_with_rearrange(
                     working = crossbar_create_net(
                         working, existing_id, state["nets"][existing_id]["nodes"]
                     )
-                    if retry_ids is None and len(ordered) == 2 and index == 0:
-                        retry_ids = ordered[0], ordered[1]
+                    if len(ordered) == 2 and index == 0:
+                        retry_sets.append((ordered[0], ordered[1]))
             except RouteError as exc:
                 if exc.code in _CANDIDATE_FAILURES:
                     continue
@@ -262,9 +262,11 @@ def crossbar_create_net_with_rearrange(
             }
 
     # Preserve every first-pass trial.  Only after it is exhausted, retry the
-    # first promising two-net selection once with the existing nets reversed.
+    # promising two-net selections in encounter order with existing nets reversed.
     # Rebuild from the caller's state so no failed trial state can leak into it.
-    if retry_ids is not None and explored < state_budget:
+    for retry_ids in retry_sets:
+        if explored >= state_budget:
+            break
         explored += 1
         working = _without_nets(state, retry_ids)
         try:
