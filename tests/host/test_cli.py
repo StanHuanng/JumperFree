@@ -79,6 +79,93 @@ class HostCliTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(transport.closed)
 
+    def test_serial_defaults_without_pyserial(self) -> None:
+        with mock.patch(
+            "jumperfree.host.cli.SerialTransport", return_value=MockTransport(),
+        ) as serial:
+            code, payload, _ = self.run_cli("status", "--port", "/dev/test")
+        serial.assert_called_once_with("/dev/test", 115200, 1.0)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+
+    def test_mock_rejects_explicit_serial_options_before_creating_transport(self) -> None:
+        for command in (
+            ("set", "--clip", "0", "--rgb", "1,2,3"),
+            ("clear", "--clip", "0"), ("clear-all",), ("status",),
+        ):
+            for options in (
+                ("--baudrate", "115200"), ("--baudrate", "0"), ("--baudrate", "-1"),
+                ("--timeout", "1"), ("--timeout", "0"), ("--timeout", "-1"),
+                ("--timeout", "nan"), ("--timeout", "inf"), ("--timeout", "1e1000"),
+                ("--baudrate", "9600", "--timeout", "0.5"),
+            ):
+                with (
+                    self.subTest(command=command, options=options),
+                    mock.patch("jumperfree.host.cli.MockTransport") as mock_transport,
+                    mock.patch("jumperfree.host.cli.SerialTransport") as serial,
+                ):
+                    code, payload, summary = self.run_cli(*command, "--mock", *options)
+                mock_transport.assert_not_called()
+                serial.assert_not_called()
+                self.assertEqual(code, 1)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["error"]["code"], "INVALID_SERIAL_CONFIG")
+                self.assertTrue(summary.startswith("HOST FAIL INVALID_SERIAL_CONFIG:"))
+
+    def test_invalid_serial_options_are_not_replaced_by_defaults(self) -> None:
+        for options in (
+            ("--baudrate", "0"), ("--timeout", "0"),
+            ("--timeout", "3600.0000000000005"), ("--timeout", "3601"),
+            ("--timeout", "1e308"),
+        ):
+            with self.subTest(options=options), mock.patch(
+                "jumperfree.host.transport.importlib.import_module",
+            ) as load:
+                code, payload, _ = self.run_cli("status", "--port", "/dev/test", *options)
+            load.assert_not_called()
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["error"]["code"], "INVALID_SERIAL_CONFIG")
+
+    def test_serial_io_overflow_has_structured_output_and_closes_port(self) -> None:
+        for operation in ("write", "readline"):
+            with self.subTest(operation=operation):
+                serial_module = mock.Mock()
+                connection = serial_module.Serial.return_value
+                connection.write.return_value = len(b"JF1 STATUS\n")
+                getattr(connection, operation).side_effect = OverflowError(
+                    "timeout exceeds platform limit",
+                )
+                with (
+                    mock.patch(
+                        "jumperfree.host.transport.importlib.import_module",
+                        return_value=serial_module,
+                    ),
+                    contextlib.redirect_stderr(io.StringIO()) as stderr,
+                ):
+                    code, payload, summary = self.run_cli("status", "--port", "/dev/test")
+                serial_module.Serial.assert_called_once_with(
+                    port="/dev/test", baudrate=115200, timeout=1.0, write_timeout=1.0,
+                )
+                connection.write.assert_called_once_with(b"JF1 STATUS\n")
+                if operation == "write":
+                    connection.readline.assert_not_called()
+                else:
+                    connection.readline.assert_called_once_with(513)
+                connection.close.assert_called_once_with()
+                self.assertEqual(code, 1)
+                self.assertEqual(stderr.getvalue(), "")
+                self.assertEqual(
+                    summary, "HOST FAIL INVALID_SERIAL_CONFIG: timeout exceeds platform limit",
+                )
+                self.assertEqual(payload, {
+                    "ok": False,
+                    "operation": "status",
+                    "error": {
+                        "code": "INVALID_SERIAL_CONFIG",
+                        "message": "timeout exceeds platform limit",
+                    },
+                })
+
     def test_missing_pyserial_error(self) -> None:
         with mock.patch(
             "jumperfree.host.transport.importlib.import_module", side_effect=ImportError,

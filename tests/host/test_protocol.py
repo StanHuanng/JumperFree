@@ -95,3 +95,13 @@ class ProtocolTests(unittest.TestCase):
                 self.assertEqual(raised.exception.as_dict(), {
                     "code": "DEVICE_ERROR", "message": message, "details": {"device_code": "BUSY"},
                 })
+
+    def test_extra_arity_responses_are_malformed(self) -> None:
+        for frame in (
+            b"JF1 OK SET 0 1 2 3 4\n", b"JF1 OK CLR 0 1\n", b"JF1 OK CLRALL 1\n",
+            b"JF1 OK STATUS" + b" 0" * 49 + b"\n",
+        ):
+            with self.subTest(frame=frame):
+                with self.assertRaises(HostError) as raised:
+                    parse_response(frame)
+                self.assertEqual(raised.exception.code, "MALFORMED_RESPONSE")

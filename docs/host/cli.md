@@ -2,7 +2,7 @@
 
 Host 负责 `Agent → Python Host → USB-UART → 外接 F103 BluePill → Clip RGB LED` 的主机侧协议。Clip 编号固定为 **0–15**，每个 Clip 对应一颗 LED，颜色使用 RGB 三通道整数（0–255）。本实现没有经过硬件验证。
 
-本功能仅控制 LED，不执行电气网络连接；不包含双 CH446Q / 8-Y 拓扑、CH446Q 开关驱动、PCB 或 Block4 固件移植。现有 `jumperfree route` 命令保持原有行为。
+本功能仅控制 LED，不执行电气网络连接；不包含双 CH446Q / 8-Y 拓扑、CH446Q 开关驱动、PCB 或固件移植。现有 `jumperfree route` 命令保持原有行为。
 
 ## 无硬件试用
 
@@ -19,6 +19,8 @@ python -m jumperfree host status --mock
 
 每个子命令都必须明确选择 `--mock` 或 `--port PORT`，两者不能同时使用。成功退出码为 0，Host 错误为 1，命令行语法错误由 argparse 返回 2。
 
+`--baudrate` 和 `--timeout` 仅用于串口；与 `--mock` 同时显式指定任一选项（包括默认值）会返回 `INVALID_SERIAL_CONFIG`，退出码为 1。
+
 输出包含一行摘要和一行键排序、无多余空格的 `HOST_JSON`：
 
 ```text
@@ -32,15 +34,15 @@ CLI 在打开串口前校验 Clip/RGB 参数；若事务和关闭连接均失败
 
 ## 可选串口
 
-只有使用串口时才需要自行安装 `pyserial`；它不是项目的硬依赖：
+只有使用串口时才需要可选依赖 `pyserial`；它不是项目的硬依赖。在仓库根目录使用 `pip install .[host]` 安装项目及串口依赖：
 
 ```bash
-python -m pip install pyserial
+python -m pip install '.[host]'
 python -m jumperfree host set --clip 3 --rgb 0,64,255 --port /dev/ttyUSB0
 python -m jumperfree host status --port /dev/ttyUSB0 --baudrate 115200 --timeout 1
 ```
 
-`/dev/ttyUSB0` 只是端口示例，Windows 可按实际枚举结果填写 `COM3` 等。`--baudrate` 默认 115200，`--timeout` 默认 1 秒，并同时用于读和写；超时必须是有限正数。串口使用 pyserial 默认的 8N1、无流控参数，需与后续 F103 固件一致。这些是软件默认值，不代表已经确定或实测的板级参数。
+`/dev/ttyUSB0` 只是端口示例，Windows 可按实际枚举结果填写 `COM3` 等。`--baudrate` 默认 115200，`--timeout` 默认 1 秒，并同时用于读和写；超时必须是大于 0 且不超过 3600 秒的有限数值，否则在打开串口前返回 `INVALID_SERIAL_CONFIG`。串口打开、写入或读取时的 `OverflowError` 也会转换为 `INVALID_SERIAL_CONFIG`，CLI 输出结构化 `HOST_JSON` 错误。串口使用 pyserial 默认的 8N1、无流控参数，需与后续 F103 固件一致。这些是软件默认值，不代表已经确定或实测的板级参数。
 
 F103 必须另行提供符合 [JF1 协议](protocol.md) 的固件，本仓库没有实现该固件。BluePill 具体型号、USB-UART 器件、UART 外设、TX/RX/GND 引脚、电平与供电连接、WS2812 数据引脚及 Clip 灯序映射均为 **TBD**。引脚表暂不指定；未确认接线前，上述命令仅作为接口示例。
 
