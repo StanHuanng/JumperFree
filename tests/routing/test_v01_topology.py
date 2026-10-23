@@ -93,6 +93,29 @@ class V01TopologyTests(unittest.TestCase):
         self.assertEqual(crossbar_query(state)["occupancy"], {"free": 44, "total": 48, "used": 4})
         self.assertEqual(find_shorts(state["topology"], net["crosspoints"], {"span": net["nodes"]}), [])
 
+    def test_same_chip_routes_reserve_y_lines_on_both_chips(self) -> None:
+        state = crossbar_init_state(v01_topology())
+        state = crossbar_create_net(state, "left", ["Clip0", "Clip1"])
+        state = crossbar_create_net(state, "right", ["Clip8", "Clip9"])
+        left, right = state["nets"]["left"], state["nets"]["right"]
+        self.assertEqual(left["crosspoints"], [["C1", 0, 0], ["C1", 1, 0]])
+        self.assertEqual(right["crosspoints"], [["C2", 0, 1], ["C2", 1, 1]])
+        self.assertEqual(
+            {tuple(line) for line in left["lines"] if line[1] == "Y"},
+            {("C1", "Y", 0), ("C2", "Y", 0)},
+        )
+        self.assertEqual(
+            {tuple(line) for line in right["lines"] if line[1] == "Y"},
+            {("C1", "Y", 1), ("C2", "Y", 1)},
+        )
+        self.assertTrue({tuple(line) for line in left["lines"]}.isdisjoint(
+            {tuple(line) for line in right["lines"]}
+        ))
+        self.assertEqual(find_shorts(
+            state["topology"], left["crosspoints"] + right["crosspoints"],
+            {"left": left["nodes"], "right": right["nodes"]},
+        ), [])
+
     def test_all_eight_shared_channels_carry_independent_nets(self) -> None:
         topology = v01_topology()
         state = crossbar_init_state(topology)

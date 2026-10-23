@@ -1,4 +1,9 @@
 {
+  "budgets": {
+    "max_moves": 8,
+    "max_rip_nets": 3,
+    "max_states": 2000
+  },
   "reference": {
     "description": "two oracles: (1) neighborhood exhaustive within a separately bounded two-net rip-up/re-route search using Steiner per route; (2) true exhaustive over all crosspoint subsets on tiny single-chip instances only (x_lines*y_lines<=6, assignment nets<=3); neither claims global optimality outside those bounds",
     "max_existing_nets": 4,
@@ -10,19 +15,25 @@
   },
   "results": [
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -35,22 +46,29 @@
         "x_lines": 2,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -63,22 +81,29 @@
         "x_lines": 2,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -91,22 +116,29 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -119,22 +151,29 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -147,22 +186,29 @@
         "x_lines": 3,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -175,22 +221,29 @@
         "x_lines": 3,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -203,22 +256,29 @@
         "x_lines": 3,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -231,22 +291,29 @@
         "x_lines": 3,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -254,27 +321,174 @@
       "timeouts": 0,
       "timeouts_or_budget_misses": 0,
       "topology": {
-        "chips": 2,
+        "chips": 1,
         "node_count": 4,
-        "x_lines": 2,
+        "x_lines": 4,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 1
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 1,
+        "node_count": 4,
+        "x_lines": 4,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 2,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 1,
+        "node_count": 4,
+        "x_lines": 4,
+        "y_lines": 3
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 2,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 1,
+        "node_count": 4,
+        "x_lines": 4,
+        "y_lines": 3
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 2,
+        "node_count": 4,
+        "x_lines": 2,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -287,26 +501,33 @@
         "x_lines": 2,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
-      "attempts": 2,
+      "accepted": 1,
+      "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
-      "success_rate": 0.5,
+      "success_rate": 1.0,
       "timeouts": 0,
       "timeouts_or_budget_misses": 0,
       "topology": {
@@ -315,26 +536,33 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
-      "attempts": 2,
+      "accepted": 1,
+      "attempts": 1,
       "avg_moves": 0.0,
-      "avg_states": 0.5,
+      "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
-      "success_rate": 0.5,
+      "success_rate": 1.0,
       "timeouts": 0,
       "timeouts_or_budget_misses": 0,
       "topology": {
@@ -343,22 +571,99 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 2,
+        "node_count": 6,
+        "x_lines": 3,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 2,
+        "node_count": 6,
+        "x_lines": 3,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -369,24 +674,31 @@
         "chips": 2,
         "node_count": 6,
         "x_lines": 3,
-        "y_lines": 2
+        "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.5,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -397,24 +709,31 @@
         "chips": 2,
         "node_count": 6,
         "x_lines": 3,
-        "y_lines": 2
+        "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 2,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -423,26 +742,33 @@
       "timeouts_or_budget_misses": 0,
       "topology": {
         "chips": 2,
-        "node_count": 6,
-        "x_lines": 3,
-        "y_lines": 3
+        "node_count": 8,
+        "x_lines": 4,
+        "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 2,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -451,26 +777,103 @@
       "timeouts_or_budget_misses": 0,
       "topology": {
         "chips": 2,
-        "node_count": 6,
-        "x_lines": 3,
-        "y_lines": 3
+        "node_count": 8,
+        "x_lines": 4,
+        "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 0.5,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 2,
+        "node_count": 8,
+        "x_lines": 4,
+        "y_lines": 3
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.5,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 1,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 0.5,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 2,
+        "node_count": 8,
+        "x_lines": 4,
+        "y_lines": 3
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 1.0,
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -483,22 +886,29 @@
         "x_lines": 2,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.5,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 2,
+        "cases": 2,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -511,22 +921,29 @@
         "x_lines": 2,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
-      "attempts": 2,
+      "accepted": 1,
+      "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -539,22 +956,29 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
-      "attempts": 2,
+      "accepted": 1,
+      "attempts": 1,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 1.0,
-        "cases": 2
+        "agreements": 1,
+        "cases": 1,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -567,22 +991,29 @@
         "x_lines": 2,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -595,22 +1026,29 @@
         "x_lines": 3,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.5,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -623,22 +1061,29 @@
         "x_lines": 3,
         "y_lines": 2
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
       "avg_moves": 0.0,
       "avg_states": 0.0,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
       "router": "steiner",
       "seed": 1,
       "shorts_found": 0,
@@ -651,22 +1096,99 @@
         "x_lines": 3,
         "y_lines": 3
       },
+      "total_moves": 0,
       "true_budget_misses": 0
     },
     {
+      "accepted": 1,
       "attempts": 2,
-      "avg_moves": 3.5,
+      "avg_moves": 0.0,
       "avg_states": 0.5,
       "budget_misses": 0,
       "compared_to_reference": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "compared_to_true_exhaustive": {
         "agreement_rate": 0.0,
-        "cases": 0
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
       },
       "line_exclusivity_violations": 0,
+      "rejected": 1,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 0.5,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 3,
+        "node_count": 9,
+        "x_lines": 3,
+        "y_lines": 3
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 2,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 3,
+        "node_count": 12,
+        "x_lines": 4,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 2,
+      "attempts": 2,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
       "router": "rearrange",
       "seed": 1,
       "shorts_found": 0,
@@ -675,10 +1197,81 @@
       "timeouts_or_budget_misses": 0,
       "topology": {
         "chips": 3,
-        "node_count": 9,
-        "x_lines": 3,
+        "node_count": 12,
+        "x_lines": 4,
+        "y_lines": 2
+      },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "steiner",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 3,
+        "node_count": 12,
+        "x_lines": 4,
         "y_lines": 3
       },
+      "total_moves": 0,
+      "true_budget_misses": 0
+    },
+    {
+      "accepted": 1,
+      "attempts": 1,
+      "avg_moves": 0.0,
+      "avg_states": 0.0,
+      "budget_misses": 0,
+      "compared_to_reference": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "compared_to_true_exhaustive": {
+        "agreement_rate": 0.0,
+        "agreements": 0,
+        "cases": 0,
+        "disagreements": 0
+      },
+      "line_exclusivity_violations": 0,
+      "rejected": 0,
+      "router": "rearrange",
+      "seed": 1,
+      "shorts_found": 0,
+      "success_rate": 1.0,
+      "timeouts": 0,
+      "timeouts_or_budget_misses": 0,
+      "topology": {
+        "chips": 3,
+        "node_count": 12,
+        "x_lines": 4,
+        "y_lines": 3
+      },
+      "total_moves": 0,
       "true_budget_misses": 0
     }
   ],
