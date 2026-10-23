@@ -1,0 +1,13 @@
+schema = "jf.board/1"
+board_id = "v01"
+rev = "0.1"
+
+# 所有段均无实测证据，工具不得自动翻转 verified。
+[sections.topology]
+verified = false
+[sections.pinmap]
+verified = false
+[sections.limits]
+verified = false
+[sections.calibration]
+verified = false

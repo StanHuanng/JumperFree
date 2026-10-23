@@ -24,7 +24,7 @@ DEFAULT_STATE = Path("out/routing-state.json")
 DEFAULT_CROSSBAR_STATE = Path("out/crossbar-state.json")
 
 
-def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
+def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> argparse._SubParsersAction[Any]:
     route = subparsers.add_parser("route", help="manage the stage-1 software routing model")
     commands = route.add_subparsers(dest="route_command", required=True)
 
@@ -77,6 +77,7 @@ def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     xbar_query = xbar_commands.add_parser("query", help="query crossbar occupancy or one net")
     xbar_query.add_argument("--net")
     xbar_query.add_argument("--state", type=Path, default=DEFAULT_CROSSBAR_STATE)
+    return commands
 
 
 def _write_state(path: Path, state: dict[str, Any]) -> None:

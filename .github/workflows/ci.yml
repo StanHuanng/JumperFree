@@ -10,6 +10,8 @@ jobs:
         python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -17,6 +19,20 @@ jobs:
         run: python -m unittest discover -s tests -t . -v
       - name: Coverage (must be 100%)
         run: python scripts/coverage_report.py
+      - name: Board verified evidence gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check_board_verification.py --base "$BASE_SHA"
+      - name: Route plan smoke
+        run: |
+          python -m jumperfree route xbar init --topology v01 --state out/plan-new.json
+          cp out/plan-new.json out/plan-old.json
+          python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/plan-new.json
+          python -m jumperfree route plan --new out/plan-new.json
+          python -m jumperfree route plan --new out/plan-new.json --old out/plan-old.json --base-epoch 0
+      - name: Timed V0.1 plan-size evaluation
+        timeout-minutes: 1
+        run: python scripts/run_plan_stats.py --seed 7 --trials 60 --out out/plan-stats.json
       - name: Host CLI smoke
         run: |
           python -m jumperfree host set --clip 0 --rgb 255,128,0 --mock

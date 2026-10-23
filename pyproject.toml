@@ -21,3 +21,4 @@ include = ["jumperfree*"]
 
 [tool.setuptools.package-data]
 "jumperfree.routing" = ["topologies/*.json"]
+"jumperfree.board" = ["boards/v01/*.toml", "boards/v01/*.json", "boards/v01/docs/hw/*"]
