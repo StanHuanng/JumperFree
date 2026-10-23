@@ -32,6 +32,33 @@ HOST_JSON {"data":{"command":"SET","values":[0,255,128,0]},"ok":true,"operation"
 
 CLI 在打开串口前校验 Clip/RGB 参数；若事务和关闭连接均失败，保留事务错误，并在 `details.close_error` 中附上关闭错误。
 
+## 孔位 RGB 指引
+
+`host guide` 将已有 V0.1 crossbar 状态中的每个网络映射为一种颜色，让同一网络的 Clip 显示相同颜色。先用 `route xbar init --topology v01` 创建状态并添加网络，再执行指引：
+
+```bash
+python -m jumperfree route xbar init --topology v01 --state out/v01.json
+python -m jumperfree route xbar create --net signal --nodes Clip0,Clip15 --state out/v01.json
+python -m jumperfree host guide --state out/v01.json --mock
+# 使用实际串口时替换 --mock：
+python -m jumperfree host guide --state out/v01.json --port /dev/ttyUSB0
+```
+
+指引在打开连接前读取并校验整个状态文件。拓扑中的所有节点（包括未加入网络的节点）只能命名为 `Clip0`–`Clip15`；`N0`、`Clip16`、`Clip00` 等返回结构化 `UNSUPPORTED_TOPOLOGY`。文件不存在返回 `STATE_NOT_FOUND`，无法读取、JSON 非法或 crossbar 状态不合法返回 `INVALID_STATE`。错误输出沿用 `HOST_JSON` 格式，退出码为 1。
+
+网络 ID 按字典序排列，依次分配固定 RGB 调色板：红 `(255,0,0)`、绿 `(0,255,0)`、蓝 `(0,0,255)`、黄 `(255,255,0)`、品红 `(255,0,255)`、青 `(0,255,255)`、橙 `(255,128,0)`、紫 `(128,0,255)`。16 个 Clip 每个最多属于一个网络，每个网络至少有两个成员，因此最多需要八种互不相同的颜色。同一状态总是生成同一指引，与网络创建顺序和 JSON 键顺序无关；添加、删除或重命名网络可能改变后续网络的颜色。
+
+HostSession 首先发送 `CLRALL`，然后按 Clip 数字编号升序逐个发送 `SET`，只点亮网络成员；未布线的 Clip 保持熄灭。空状态只发送 `CLRALL`。成功输出例如：
+
+```text
+HOST guide OK
+HOST_JSON {"data":{"plan":[[0,255,0,0],[15,255,0,0]]},"ok":true,"operation":"guide"}
+```
+
+`data.plan` 每项为 `[clip,r,g,b]`。指引不修改状态文件，也不发送任何 CH446Q 开关命令，仅提供软件到 RGB LED 的提示，不能建立或验证电气连接。传输失败后立即停止并关闭连接；之前已成功发送的清灯或设色可能已经生效，不会自动重试或回滚。
+
+纯函数 `from jumperfree.host import plan_guide` 接受加载后的 crossbar 状态，返回按 Clip 数字编号排序的 `(clip,r,g,b)` 元组列表；不会修改输入、打开连接或发送命令。
+
 ## 可选串口
 
 只有使用串口时才需要可选依赖 `pyserial`；它不是项目的硬依赖。在仓库根目录使用 `pip install .[host]` 安装项目及串口依赖：
@@ -76,6 +103,9 @@ finally:
 | `INVALID_RGB` | RGB 数量/格式不正确，或通道不是 0–255 的整数 |
 | `INVALID_COMMAND` | 协议编码时命令或参数数量错误 |
 | `INVALID_SERIAL_CONFIG` | 串口参数不合法 |
+| `STATE_NOT_FOUND` | 指引所需的状态文件不存在 |
+| `INVALID_STATE` | 指引状态文件无法读取、JSON 非法或 crossbar 状态不合法 |
+| `UNSUPPORTED_TOPOLOGY` | 指引拓扑包含 Clip0–Clip15 之外的节点 ID |
 | `SERIAL_UNAVAILABLE` | 未安装可选 pyserial |
 | `TRANSPORT_ERROR` | 打开、写、读或关闭失败 |
 | `SHORT_WRITE` | 请求未完整写入，Host 不自动补写 |
