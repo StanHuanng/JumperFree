@@ -263,7 +263,10 @@ def aggregate_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
     true_divisor = len(true_compared) or 1
     return {
         "attempts": attempts,
+        "accepted": successes,
+        "rejected": attempts - successes,
         "success_rate": successes / divisor,
+        "total_moves": sum(int(record["moves"]) for record in records),
         "avg_moves": sum(int(record["moves"]) for record in records) / divisor,
         "avg_states": sum(int(record["states"]) for record in records) / divisor,
         "timeouts": 0,
@@ -276,10 +279,14 @@ def aggregate_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         ),
         "compared_to_reference": {
             "cases": len(compared),
+            "agreements": agreements,
+            "disagreements": len(compared) - agreements,
             "agreement_rate": agreements / comparison_divisor,
         },
         "compared_to_true_exhaustive": {
             "cases": len(true_compared),
+            "agreements": true_agreements,
+            "disagreements": len(true_compared) - true_agreements,
             "agreement_rate": true_agreements / true_divisor,
         },
     }
@@ -375,7 +382,11 @@ def run_evaluation(
     reference_max_nodes: int = REFERENCE_MAX_NODES,
     reference_max_nets: int = REFERENCE_MAX_NETS,
 ) -> dict[str, Any]:
-    """Run both routers over every requested small-topology dimension."""
+    """Compare routers on identical seeded streams across 18 small topologies.
+
+    Each router evolves its own state after accepting/rejecting a request;
+    reference oracles are evaluated against that router's pre-create state.
+    """
 
     if trials < 0:
         raise ValueError("trials must be non-negative")
@@ -395,7 +406,7 @@ def run_evaluation(
         ("steiner", _plain_router),
         ("rearrange", _rearrange_router(max_moves, max_states, max_rip_nets)),
     )
-    for chips, x_lines, y_lines in product((1, 2, 3), (2, 3), (2, 3)):
+    for chips, x_lines, y_lines in product((1, 2, 3), (2, 3, 4), (2, 3)):
         topology = small_topology(chips, x_lines, y_lines)
         nodes = sorted(topology["node_attachments"])
         operations = _workload(rng, nodes, trials)
@@ -421,6 +432,11 @@ def run_evaluation(
                 **metrics,
             })
     return {
+        "budgets": {
+            "max_moves": max_moves,
+            "max_states": max_states,
+            "max_rip_nets": max_rip_nets,
+        },
         "reference": {
             "description": (
                 "two oracles: (1) neighborhood exhaustive within a separately "

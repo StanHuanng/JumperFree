@@ -1,0 +1,285 @@
+{
+  "description": "A same-chip net reserves the only shared Y link. Moving it to a local Y line costs seven resource changes and admits a spanning net. Delete/recreate repeats the pressure; rejected creates still have matching deletes in the common stream.",
+  "topology": {
+    "chips": [
+      {
+        "name": "C0",
+        "x_lines": 3,
+        "y_lines": 2
+      },
+      {
+        "name": "C1",
+        "x_lines": 3,
+        "y_lines": 2
+      }
+    ],
+    "node_attachments": {
+      "N0": [
+        "C0",
+        "X",
+        0
+      ],
+      "N1": [
+        "C0",
+        "X",
+        1
+      ],
+      "N2": [
+        "C0",
+        "X",
+        2
+      ],
+      "N3": [
+        "C1",
+        "X",
+        0
+      ],
+      "N4": [
+        "C1",
+        "X",
+        1
+      ],
+      "N5": [
+        "C1",
+        "X",
+        2
+      ]
+    },
+    "inter_chip_links": [
+      [
+        [
+          "C0",
+          "Y",
+          0
+        ],
+        [
+          "C1",
+          "Y",
+          0
+        ]
+      ]
+    ]
+  },
+  "operations": [
+    [
+      "create",
+      "old",
+      [
+        "N0",
+        "N1"
+      ]
+    ],
+    [
+      "create",
+      "side",
+      [
+        "N4",
+        "N5"
+      ]
+    ],
+    [
+      "create",
+      "new",
+      [
+        "N2",
+        "N3"
+      ]
+    ],
+    [
+      "delete",
+      "new",
+      []
+    ],
+    [
+      "create",
+      "new",
+      [
+        "N2",
+        "N3"
+      ]
+    ],
+    [
+      "delete",
+      "old",
+      []
+    ],
+    [
+      "delete",
+      "side",
+      []
+    ],
+    [
+      "delete",
+      "new",
+      []
+    ],
+    [
+      "create",
+      "old",
+      [
+        "N0",
+        "N1"
+      ]
+    ],
+    [
+      "create",
+      "new",
+      [
+        "N2",
+        "N3"
+      ]
+    ]
+  ],
+  "variants": {
+    "steiner": {
+      "accepted": [
+        true,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "moves": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "rearrange": {
+      "budgets": {
+        "max_moves": 7,
+        "max_states": 1,
+        "max_rip_nets": 1
+      },
+      "accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "moves": [
+        0,
+        0,
+        7,
+        0,
+        0,
+        7
+      ],
+      "states": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1
+      ]
+    },
+    "move_limited": {
+      "budgets": {
+        "max_moves": 6,
+        "max_states": 1,
+        "max_rip_nets": 1
+      },
+      "accepted": [
+        true,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "moves": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    "state_limited": {
+      "budgets": {
+        "max_moves": 7,
+        "max_states": 0,
+        "max_rip_nets": 1
+      },
+      "accepted": [
+        true,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "moves": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "rip_limited": {
+      "budgets": {
+        "max_moves": 7,
+        "max_states": 1,
+        "max_rip_nets": 0
+      },
+      "accepted": [
+        true,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "moves": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "states": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  }
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import unittest
@@ -10,6 +11,7 @@ from jumperfree.routing.crossbar import small_topology
 from jumperfree.routing.eval import (
     REFERENCE_MAX_NETS,
     REFERENCE_MAX_NODES,
+    _plain_router,
     _rearrange_router,
     _run_router,
     aggregate_metrics,
@@ -27,9 +29,53 @@ GOLDEN_PATH = (
 ORDER_CASES_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "rearrange_order_cases.json"
 )
+PRESSURE_CASE_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "eval_shared_link_pressure.json"
+)
 
 
 class EvalTests(unittest.TestCase):
+    def test_shared_link_pressure_fixture_compares_routers_and_budget_misses(self) -> None:
+        case = json.loads(PRESSURE_CASE_PATH.read_text(encoding="utf-8"))
+        snapshot = copy.deepcopy(case)
+        for name, expected in case["variants"].items():
+            with self.subTest(variant=name):
+                router = (
+                    _plain_router if name == "steiner"
+                    else _rearrange_router(**expected["budgets"])
+                )
+                arguments = {
+                    "reference_max_nodes": REFERENCE_MAX_NODES,
+                    "reference_max_nets": REFERENCE_MAX_NETS,
+                }
+                records = _run_router(case["topology"], case["operations"], router, **arguments)
+                self.assertEqual(
+                    records,
+                    _run_router(case["topology"], case["operations"], router, **arguments),
+                )
+                for field in ("accepted", "moves", "states"):
+                    self.assertEqual([record[field] for record in records], expected[field])
+                self.assertTrue(all(record["reference"] is True for record in records))
+                self.assertTrue(all(record["true_reference"] is None for record in records))
+                metrics = aggregate_metrics(records)
+                accepted = sum(expected["accepted"])
+                rejected = len(records) - accepted
+                self.assertEqual(metrics["accepted"], accepted)
+                self.assertEqual(metrics["rejected"], rejected)
+                self.assertEqual(metrics["attempts"], 6)
+                self.assertEqual(metrics["success_rate"], accepted / 6)
+                self.assertEqual(metrics["total_moves"], sum(expected["moves"]))
+                self.assertEqual(metrics["avg_moves"], sum(expected["moves"]) / 6)
+                self.assertEqual(metrics["avg_states"], sum(expected["states"]) / 6)
+                self.assertEqual(metrics["budget_misses"], rejected)
+                self.assertEqual(metrics["compared_to_reference"], {
+                    "cases": 6, "agreements": accepted, "disagreements": rejected,
+                    "agreement_rate": accepted / 6,
+                })
+                self.assertEqual(metrics["shorts_found"], 0)
+                self.assertEqual(metrics["line_exclusivity_violations"], 0)
+        self.assertEqual(case, snapshot)
+
     def test_rearrange_order_fixtures_match_the_local_oracle(self) -> None:
         cases = json.loads(ORDER_CASES_PATH.read_text(encoding="utf-8"))
         records = []
@@ -60,7 +106,7 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(metrics["budget_misses"], 0)
         self.assertEqual(
             metrics["compared_to_reference"],
-            {"cases": 6, "agreement_rate": 1},
+            {"cases": 6, "agreements": 6, "disagreements": 0, "agreement_rate": 1},
         )
 
     def test_metric_aggregation_including_empty_input(self) -> None:
@@ -101,7 +147,10 @@ class EvalTests(unittest.TestCase):
         ]
         metrics = aggregate_metrics(records)
         self.assertEqual(metrics["attempts"], 3)
+        self.assertEqual(metrics["accepted"], 2)
+        self.assertEqual(metrics["rejected"], 1)
         self.assertEqual(metrics["success_rate"], 2 / 3)
+        self.assertEqual(metrics["total_moves"], 3)
         self.assertEqual(metrics["avg_moves"], 1)
         self.assertEqual(metrics["avg_states"], 3)
         self.assertEqual(metrics["timeouts"], 0)
@@ -110,11 +159,17 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(metrics["true_budget_misses"], 1)
         self.assertEqual(metrics["shorts_found"], 1)
         self.assertEqual(metrics["line_exclusivity_violations"], 2)
-        self.assertEqual(metrics["compared_to_reference"], {"cases": 2, "agreement_rate": 0.5})
+        self.assertEqual(metrics["compared_to_reference"], {
+            "cases": 2, "agreements": 1, "disagreements": 1, "agreement_rate": 0.5,
+        })
         self.assertEqual(
-            metrics["compared_to_true_exhaustive"], {"cases": 2, "agreement_rate": 0.5}
+            metrics["compared_to_true_exhaustive"],
+            {"cases": 2, "agreements": 1, "disagreements": 1, "agreement_rate": 0.5},
         )
         empty = aggregate_metrics([])
+        self.assertEqual(empty["accepted"], 0)
+        self.assertEqual(empty["rejected"], 0)
+        self.assertEqual(empty["total_moves"], 0)
         self.assertEqual(empty["success_rate"], 0)
         self.assertEqual(empty["compared_to_reference"]["agreement_rate"], 0)
         self.assertEqual(empty["compared_to_true_exhaustive"]["cases"], 0)
@@ -335,11 +390,15 @@ class EvalTests(unittest.TestCase):
         first = run_evaluation(seed=17, trials=2, max_states=4)
         second = run_evaluation(seed=17, trials=2, max_states=4)
         self.assertEqual(first, second)
-        self.assertEqual(set(first), {"reference", "results", "seed", "trials"})
-        self.assertEqual(len(first["results"]), 24)
+        self.assertEqual(set(first), {"budgets", "reference", "results", "seed", "trials"})
+        self.assertEqual(first["budgets"], {
+            "max_moves": 8, "max_states": 4, "max_rip_nets": 3,
+        })
+        self.assertEqual(len(first["results"]), 36)
         self.assertTrue(first["reference"]["true_exhaustive_requires_single_chip"])
         self.assertEqual(first["reference"]["true_exhaustive_max_crosspoints"], 6)
         for result in first["results"]:
+            self.assertEqual(result["accepted"] + result["rejected"], result["attempts"])
             self.assertEqual(result["shorts_found"], 0)
             self.assertEqual(result["line_exclusivity_violations"], 0)
             self.assertIn("agreement_rate", result["compared_to_reference"])
@@ -353,6 +412,37 @@ class EvalTests(unittest.TestCase):
             with self.subTest(arguments=arguments), self.assertRaises(RouteError) as caught:
                 run_evaluation(seed=0, trials=0, **arguments)
             self.assertEqual(caught.exception.code, "INVALID_REARRANGE_BUDGET")
+
+    def test_expanded_load_uses_the_same_stream_for_both_routers(self) -> None:
+        with mock.patch("jumperfree.routing.eval._run_router", wraps=_run_router) as runner:
+            report = run_evaluation(seed=7, trials=40, max_moves=7, max_states=10,
+                                    max_rip_nets=1)
+        self.assertEqual(report["budgets"], {
+            "max_moves": 7, "max_states": 10, "max_rip_nets": 1,
+        })
+        self.assertEqual(runner.call_count, 36)
+        dimensions = set()
+        for index in range(0, len(report["results"]), 2):
+            steiner, rearrange = report["results"][index:index + 2]
+            self.assertEqual((steiner["router"], rearrange["router"]), ("steiner", "rearrange"))
+            self.assertEqual(steiner["topology"], rearrange["topology"])
+            self.assertEqual(steiner["attempts"], rearrange["attempts"])
+            topology = steiner["topology"]
+            dimensions.add((topology["chips"], topology["x_lines"], topology["y_lines"]))
+            plain_args = runner.call_args_list[index].args
+            rearrange_args = runner.call_args_list[index + 1].args
+            self.assertIs(plain_args[1], rearrange_args[1])
+            self.assertEqual(len(plain_args[1]), 40)
+            self.assertEqual({operation[0] for operation in plain_args[1]}, {"create", "delete"})
+        self.assertEqual(dimensions, {
+            (chips, x_lines, y_lines)
+            for chips in (1, 2, 3) for x_lines in (2, 3, 4) for y_lines in (2, 3)
+        })
+        self.assertTrue(any(row["rejected"] > 0 for row in report["results"]))
+        self.assertTrue(any(row["total_moves"] > 0 for row in report["results"]))
+        for row in report["results"]:
+            self.assertEqual(row["shorts_found"], 0)
+            self.assertEqual(row["line_exclusivity_violations"], 0)
 
     def test_golden_metrics_seed1_trials2_exact_match(self) -> None:
         report = run_evaluation(

@@ -40,3 +40,5 @@ net，并限制连接集合对称差 `C_move` 和探索状态数。完整首轮�
 
 指标同时报告邻域 `compared_to_reference` / `budget_misses`，以及真穷举 `compared_to_true_exhaustive` / `true_budget_misses`。黄金快照见 `tests/routing/fixtures/eval_golden_seed1_trials2.json`。
 
+运行方式、扩展拓扑范围、接受/拒绝数量及移动成本说明见[小拓扑对比评估](eval.md)。
+
