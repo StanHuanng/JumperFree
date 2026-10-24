@@ -2,8 +2,16 @@
 
 > **让 AI 像调试软件一样搭建真实电路：无跳线原型板的软件路由器**
 
-[![CI](https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml/badge.svg)](https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-brightgreen.svg)](https://www.python.org)
+<p>
+<a href="https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml"><img src="https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<img src="https://img.shields.io/badge/Python-3.11%20%7C%203.13-3776AB?logo=python&logoColor=white" alt="Python">
+<img src="https://img.shields.io/badge/coverage-100%25-2D5A43" alt="Coverage">
+<img src="https://img.shields.io/badge/dependencies-stdlib%20only-34495E" alt="Dependencies">
+<img src="https://img.shields.io/badge/MCU-STM32F103-03234B?logo=stmicroelectronics&logoColor=white" alt="MCU">
+<img src="https://img.shields.io/badge/switch-CH446Q-d97757" alt="Switch">
+<img src="https://img.shields.io/github/last-commit/StanHuanng/JumperFree?color=555" alt="Last commit">
+<img src="https://img.shields.io/github/languages/code-size/StanHuanng/JumperFree?color=555" alt="Code size">
+</p>
 
 ---
 
