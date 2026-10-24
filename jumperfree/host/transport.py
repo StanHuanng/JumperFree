@@ -117,5 +117,18 @@ class SerialTransport:
         except OverflowError as exc:
             raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
 
+    def reset_input(self) -> None:
+        """JF2 请求前丢弃串口残留应答。"""
+        self._serial.reset_input_buffer()
+
+    def readline_with_timeout(self, timeout: float) -> bytes:
+        """JF2 总 deadline 限制；保持原有 JF1 readline 行为。"""
+        previous = self._serial.timeout
+        try:
+            self._serial.timeout = min(previous, timeout)
+            return self.readline()
+        finally:
+            self._serial.timeout = previous
+
     def close(self) -> None:
         self._serial.close()

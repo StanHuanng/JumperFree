@@ -12,11 +12,11 @@
 | 空行 | 空串或仅含 ASCII 空格、TAB 的行，忽略 |
 | `> <request>` | 前缀为 `>` 加一个 ASCII 空格，其后的全部字符是请求载荷 |
 | `< <expected response>` | 前缀为 `<` 加一个 ASCII 空格，其后的全部字符是预期应答载荷 |
-| `@ <name> <args>` | 为未来保留的指令，例如 `@ fault`、`@ advance_ms`；**M1 不支持任何指令，遇到必须明确报未知指令** |
+| `@ <name> <args>` | M3a 白名单故障/时间指令，见下节；不产生线上应答 |
 
 表中的尖括号是占位说明，不写入载荷。前缀前不可缩进。前缀的一个空格不属于载荷；其后首尾空格都属于载荷，不能提前 trim。没有行内注释，载荷中的 `#` 是普通字符。`> ` 后允许空载荷，用于测试空请求；应答至少有一个 token。
 
-忽略注释和空行后，每个 `> ` 必须紧跟**恰好一个** `< `，不可连续请求、孤立应答或多余应答；文件结束时不得有未配对应答的请求。JF1/JF2 均为一次请求对应一次应答。未来指令的执行语义另行定义，M1 遇到指令直接失败。
+忽略注释和空行后，每个 `> ` 必须紧跟**恰好一个** `< `，不可连续请求、孤立应答或多余应答；文件结束时不得有未配对应答的请求。JF1/JF2 均为一次请求对应一次应答。指令仅可出现在完整请求/应答对之间；不能插入 `>` 与 `<` 中间。
 
 ## 载荷字节与转义
 
@@ -49,6 +49,21 @@ token 数量必须完全相同，区分大小写，逐个比较：
 
 ## Python 接口与错误
 
-`jumperfree.core.vectors.parse_vec(text, name="<vec>")` 返回不可变 `tuple[VecStep, ...]`；`match_response(step.expected, actual_line)` 返回布尔值。解析器不做文件 I/O；测试消费方读取 UTF-8 文本。
+`jumperfree.core.vectors.parse_vec(text, name="<vec>")` 返回不可变 `tuple[VecStep | VecDirective, ...]`；`match_response(step.expected, actual_line)` 返回布尔值。解析器不做文件 I/O；测试消费方读取 UTF-8 文本。
 
 所有语法错误抛出 `VecError(JfError)`，`code="VEC_SYNTAX"`，`details` 含 `name`、`line`，消息也含文件名和行号。错行报告当前物理行；到 EOF 才发现缺应答时，报告悬空请求行。未知指令包含原始指令文本，不能静默忽略。
+
+## M3a 指令与 JF2 固定向量
+
+解析器只接受下列精确语法（单空格，无尾随空格），未知指令/参数/位置一律 VEC_SYNTAX。`VecDirective(name, args, line)` 为冻结对象，line 是指令物理行号。harness 按顺序执行，无 write/readline、无应答匹配；下一请求才观察结果。MockDevice 使用 `directive(step.name, step.args)`；C harness 应实现相同模型动作。
+
+| 指令 | C/Python harness 语义 |
+| --- | --- |
+| `@ advance_ms <n>` | n 为无符号规范十进制（允许 0）；增加虚拟时间 n 毫秒，立即检查租约（等于到期点即过期）。向量实例应使用虚拟时钟；不要真实 sleep |
+| `@ fault hw` | 注入持续硬件源，立即全断/中止事务、epoch+1、SAFE，锁存 HW_FAULT=0x4 |
+| `@ fault_source_gone hw` | 源消失，锁存仍在；后续 FAULT CLEAR 才清除 |
+| `@ reboot por` | 清影子/LED/会话/缓存/输入输出，epoch=0，生成新 boot，uptime 归零；活跃 HW 源保留 |
+| `@ reboot iwdg` | 同上，reset=iwdg，另锁存 WDT_RESET=0x20；新 HELLO 前需清故障才可 arm |
+| `@ interrupt_next_commit` | 下一次通过全部校验的 COMMIT 中断，全断/epoch+1/SAFE，锁存 0x2、结果 ABORTED，ERR COMMIT_INTERRUPTED；未通过校验不消费标记 |
+
+JF2 文件中仅 boot/up 使用 `key=*`；CRC、位图、tag、caps、版本、reset、状态和故障都固定。每个文件新建虚拟时间从 0 开始的 MockDevice。JF1 冻结向量同时对 MockTransport 与 MockDevice 运行，JF2 文件只对 MockDevice。JF2 的 CRC 均使用真实操作串计算后固定写入文件，不能沿用架构文档示意 CRC。BBM 向量故意先发送 make 再 break；Python 测试另检查 execution_log，C harness 应检查实际 OFF/ON 调用顺序。boot 通配不证明重启发生，Python 另有新旧 boot 不相等测试，C harness 也应检查重启时生成新 boot。

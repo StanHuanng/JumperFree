@@ -1,0 +1,19 @@
+# M3a 固定协议向量；每个文件一个新设备。
+> JF1 SET 0 1 2 3
+< JF1 OK SET 0 1 2 3
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=por nonce=7f3a
+> JF2 LED BATCH 2 0:abcdef 15:010203
+< JF2 OK LED BATCH 2
+> JF1 STATUS
+< JF1 OK STATUS 171 205 239 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 2 3
+> JF2 LED BATCH 2 0:ffffff 16:000000
+< JF2 ERR BAD_ARG invalid LED update
+> JF1 STATUS
+< JF1 OK STATUS 171 205 239 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 2 3
+> JF1 CLRALL
+< JF1 OK CLRALL
+> JF2 LED BATCH 0
+< JF2 OK LED BATCH 0
+> JF1 STATUS
+< JF1 OK STATUS 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0

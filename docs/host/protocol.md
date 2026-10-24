@@ -66,3 +66,7 @@ Mock 的无效请求会返回 `CLIP_OUT_OF_RANGE`、`INVALID_RGB`、`INVALID_COM
 I/O 故障通过 `OSError` 报告，HostSession 转为结构化 `TRANSPORT_ERROR`。自定义 Transport 必须提供有限读写超时，HostSession 本身不另开计时线程。
 
 `MockTransport()` 默认模拟 16 个全黑 Clip，支持分段写入和按行排队应答。`MockTransport(responses=[...])` 禁用自动模拟，仅按序返回指定 bytes，用于测试坏帧、设备 ERR 或迟到应答；显式传入空列表可模拟无应答。Mock 的空读取立即返回，不模拟真实耗时。该模型不含开关、拓扑或固件驱动。
+
+## JF2（M3a）
+
+独立前缀的事务、租约、故障与 MockDevice 规范见 [JF2 主机与内存设备](jf2.md)。JF1 字节和 HostSession 保持冻结；当前全部为软件验证，未经硬件验证。

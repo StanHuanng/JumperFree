@@ -1,0 +1,60 @@
+# M3a 固定协议向量；每个文件一个新设备。
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=por nonce=7f3a
+> JF2 LEASE 10
+< JF2 OK LEASE 10
+@ advance_ms 9
+> JF2 PING 1
+< JF2 OK PING 1 up=*
+@ advance_ms 9
+> JF2 PING 2
+< JF2 OK PING 2 up=*
+@ advance_ms 10
+> JF2 SW STATUS
+< JF2 OK SW STATUS epoch=1 crc=aa075363 c0=00000000000000000000000000000000 c1=00000000000000000000000000000000 state=SAFE f=1
+> JF2 FAULT GET
+< JF2 OK FAULT GET f=1
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=1 state=SAFE reset=por nonce=7f3a f=1
+> JF2 FAULT CLEAR
+< JF2 OK FAULT CLEAR f=0
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=1 state=ARMED reset=por nonce=7f3a
+> JF2 LEASE 0
+< JF2 OK LEASE 0
+@ advance_ms 1000000
+> JF2 SW STATUS
+< JF2 OK SW STATUS epoch=1 crc=aa075363 c0=00000000000000000000000000000000 c1=00000000000000000000000000000000 state=ARMED
+@ fault hw
+> JF2 FAULT CLEAR
+< JF2 OK FAULT CLEAR f=4
+@ fault_source_gone hw
+> JF2 FAULT GET
+< JF2 OK FAULT GET f=4
+> JF2 FAULT CLEAR
+< JF2 OK FAULT CLEAR f=0
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=2 state=ARMED reset=por nonce=7f3a
+> JF2 TXN BEGIN 1 2 1
+< JF2 OK TXN BEGIN 1
+> JF2 TXN ADD 1 0 +0:0:0@1
+< JF2 OK TXN ADD 1 0
+@ interrupt_next_commit
+> JF2 TXN COMMIT 1 1 26a19df6
+< JF2 ERR COMMIT_INTERRUPTED commit interrupted all open f=2
+> JF2 SW STATUS
+< JF2 OK SW STATUS epoch=3 crc=aa075363 c0=00000000000000000000000000000000 c1=00000000000000000000000000000000 state=SAFE f=2
+> JF2 TXN QUERY 1
+< JF2 OK TXN QUERY 1 result=ABORTED f=2
+@ reboot iwdg
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=SAFE reset=iwdg nonce=7f3a f=20
+> JF2 SW STATUS
+< JF2 OK SW STATUS epoch=0 crc=aa075363 c0=00000000000000000000000000000000 c1=00000000000000000000000000000000 state=SAFE f=20
+> JF2 FAULT CLEAR
+< JF2 OK FAULT CLEAR f=0
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=iwdg nonce=7f3a
+@ reboot por
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=por nonce=7f3a

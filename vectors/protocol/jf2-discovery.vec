@@ -1,0 +1,35 @@
+# M3a 固定协议向量；每个文件一个新设备。
+> JF2 TXN BEGIN 1 0 0
+< JF2 ERR SAFE_MODE HELLO required without faults
+> JF2 HELLO 1 a
+< JF2 ERR UNSUPPORTED unsupported protocol
+> JF2 HELLO 2 z
+< JF2 ERR BAD_ARG invalid nonce
+> JF2 HELLO 2 7f3a
+< JF2 OK HELLO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=por nonce=7f3a
+> JF2 INFO
+< JF2 OK INFO fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=* epoch=0 state=ARMED reset=por brightness_cap=64 lease_default_ms=0 max_ops=256
+> JF2 PING 12
+< JF2 OK PING 12 up=*
+> JF2 SELFTEST 0
+< JF2 OK SELFTEST 0 result=pass
+> JF2 SELFTEST 1
+< JF2 ERR UNSUPPORTED no sensing hardware
+> JF2 SELFTEST 2
+< JF2 ERR UNSUPPORTED no sensing hardware
+> JF2 CFG GET brightness_cap
+< JF2 OK CFG GET brightness_cap value=64
+> JF2 CFG GET lease_default_ms
+< JF2 OK CFG GET lease_default_ms value=0
+> JF2 CFG GET max_ops
+< JF2 OK CFG GET max_ops value=256
+> JF2 CFG SET brightness_cap 20
+< JF2 ERR UNSUPPORTED no maintenance mode
+> JF2 NOTREAL
+< JF2 ERR UNSUPPORTED unknown command
+> JF2 PING 01
+< JF2 ERR BAD_FRAME expected canonical unsigned integer
+> JF2  INFO
+< JF2 ERR BAD_FRAME expected printable ASCII and single spaces
+> JF2 SW STATUS
+< JF2 OK SW STATUS epoch=0 crc=aa075363 c0=00000000000000000000000000000000 c1=00000000000000000000000000000000 state=ARMED
