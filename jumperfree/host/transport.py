@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import importlib
 import math
+import time
 from collections import deque
-from typing import Iterable, Protocol
+from typing import Callable, Iterable, Protocol
 
 from .errors import HostError
 from .protocol import CLIP_COUNT, MAX_LINE_BYTES, parse_request
@@ -116,6 +117,32 @@ class SerialTransport:
             return self._serial.readline(MAX_LINE_BYTES + 1)
         except OverflowError as exc:
             raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
+
+    def reset_input(self) -> None:
+        """JF2 请求前丢弃串口残留应答。"""
+        self._serial.reset_input_buffer()
+
+    def readline_until(self, deadline: float, *, clock: Callable[[], float] = time.monotonic) -> bytes:
+        """JF2 专用：逐字节重算剩余 timeout，不延长绝对 deadline。"""
+        previous = self._serial.timeout
+        line = bytearray()
+        try:
+            while len(line) <= MAX_LINE_BYTES:
+                remaining = deadline - clock()
+                if remaining <= 0:
+                    break
+                self._serial.timeout = min(previous, remaining)
+                chunk = self._serial.read(1)
+                if not chunk:
+                    break
+                line.extend(chunk)
+                if chunk == b"\n":
+                    break
+            return bytes(line)
+        except OverflowError as exc:
+            raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
+        finally:
+            self._serial.timeout = previous
 
     def close(self) -> None:
         self._serial.close()

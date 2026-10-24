@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -21,6 +22,15 @@ class VecStep:
 
     request: bytes
     expected: tuple[str, ...]
+    line: int
+
+
+@dataclass(frozen=True)
+class VecDirective:
+    """不产生线上应答的白名单测试指令。"""
+
+    name: str
+    args: tuple[str, ...]
     line: int
 
 
@@ -55,8 +65,8 @@ def _payload(text: str, *, name: str, line: int) -> bytes:
     return bytes(result)
 
 
-def parse_vec(text: str, *, name: str = "<vec>") -> tuple[VecStep, ...]:
-    """Parse vector text without file IO; reject all reserved directives in M1."""
+def parse_vec(text: str, *, name: str = "<vec>") -> tuple[VecStep | VecDirective, ...]:
+    """Parse vector text without IO; directives are allowed only between steps."""
     steps = []
     pending: tuple[bytes, int] | None = None
     for line, raw in enumerate(text.split("\n"), 1):
@@ -64,7 +74,14 @@ def parse_vec(text: str, *, name: str = "<vec>") -> tuple[VecStep, ...]:
         if not raw.strip(" \t") or raw.startswith("#"):
             continue
         if raw.startswith("@"):
-            raise VecError(f"未知指令（M1 尚不支持指令）：{raw}", name=name, line=line)
+            valid = re.fullmatch(
+                r"@ (advance_ms (?:0|[1-9][0-9]*)|fault hw|fault_source_gone hw|reboot (?:por|iwdg)|interrupt_next_commit)", raw,
+            )
+            if valid is None or pending is not None:
+                raise VecError(f"未知指令或指令位置非法：{raw}", name=name, line=line)
+            tokens = raw[2:].split(" ")
+            steps.append(VecDirective(tokens[0], tuple(tokens[1:]), line))
+            continue
         if not raw.startswith(("> ", "< ")):
             raise VecError("行必须以 '#', '> ', '< ' 或 '@ ' 开头", name=name, line=line)
         if raw.startswith("> "):
