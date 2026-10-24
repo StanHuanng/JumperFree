@@ -1,0 +1,18 @@
+schema = "jf.pinmap/1"
+mcu = "STM32F103C8 (假设 A6，待确认)"
+status = "unassigned"
+[uart]
+status = "unassigned"
+tx = "TBD"
+rx = "TBD"
+format = "3.3V 8N1，待实测"
+baud = "115200 起步，待实测"
+[ch446q]
+status = "unassigned"
+address = "TBD"
+dat = "TBD"
+stb = "TBD"
+rst = "TBD"
+[led]
+status = "unassigned"
+data = "TBD"

@@ -14,7 +14,7 @@
 
 `core/` 是各层共享的纯格式与错误基础，不是额外业务层，只允许导入标准库和自身。`tests/test_layering.py` 通过 AST 强制当前 Python 包的依赖方向。
 
-主要流程为 **route → plan → device**：意图先经过纯路由，再经板级编译与 plan 校验，服务层完成一致性检查、写前意图记录，最后调用设备事务。设备成功后才落主机状态。JF2、SwitchPlan、DeviceClient、固件与持久化事务属于后续里程碑，M1 不实现它们。
+主要流程为 **route → plan → device**：意图先经过纯路由，再经板级编译与 plan 校验，服务层完成一致性检查、写前意图记录，最后调用设备事务。设备成功后才落主机状态。M2 的 [板级计划](board.md) 与 [影子格式](shadow.md) 已实现；JF2、DeviceClient、固件与持久化事务属于后续里程碑。
 
 ## 协议与安全默认值
 
@@ -29,9 +29,9 @@ CH446Q 不可回读，设备读回仅为固件影子，不能证明物理通断�
 | 阶段 | 产出 | 状态 | 硬件 |
 | --- | --- | --- | --- |
 | M0 | host guide 基线 | 已完成 | 否 |
-| audit / layering | core、board、service 拆分与依赖门禁 | 已完成（PR #18 并入 main） | 否 |
-| M1 | JF1 共享向量、解析器、架构文档与 ADR | 本 PR | 否 |
-| M2 | BoardProfile、SwitchPlan、compile/verify、route plan | 后续 | 否 |
+| audit / layering | core、board、service 拆分与依赖门禁 | 已完成（PR #18） | 否 |
+| M1 | JF1 共享向量、解析器、架构文档与 ADR | 已完成（PR #19） | 否 |
+| M2 | BoardProfile、SwitchPlan、compile/verify、route plan、V0.1 plan 大小统计 | 本 PR | 否 |
 | M3 | JF2 主机与 MockDevice、DeviceClient、租约/事务；net 电源轨与 RAIL_CONFLICT（service） | 后续 | 否 |
 | M4 | 可移植 C 固件核心、驱动与 jf_sim，共享向量 | 后续 | 否 |
 | M5 | Python ↔ jf_sim 的 FIL 集成与差分测试 | 后续 | 否 |

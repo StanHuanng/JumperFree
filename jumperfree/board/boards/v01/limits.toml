@@ -1,0 +1,6 @@
+# 以下均为设计初值，待实测；不表示已有固件控制或硬件保护。
+status = "待实测"
+max_ops = 256
+brightness_cap = 64
+lease_default_ms = 0
+t_gap_ms = 1
