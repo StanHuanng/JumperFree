@@ -2,7 +2,9 @@
 
 
 <p>
+<a href="https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml"><img src="https://github.com/StanHuanng/JumperFree/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <img src="https://img.shields.io/badge/version-1.0-34495E" alt="version 1.0">
+<img src="https://img.shields.io/badge/Python-3.11%20%7C%203.13-3776AB?logo=python&logoColor=white" alt="Python">
 <img src="https://img.shields.io/badge/License-Proprietary-d97757" alt="License: Proprietary">
 </p>
 
