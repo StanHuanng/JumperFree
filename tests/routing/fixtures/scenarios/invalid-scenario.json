@@ -1,9 +1,0 @@
-{
-  "id": "invalid-scenario",
-  "title": "Missing required sources",
-  "mcu": {"kind": "test adapter", "pins": {"A": "R0C0"}},
-  "modules": [{"id": "target", "kind": "target", "placement": {"rows": [0]}, "pins": {"A": 0}}],
-  "nets": [{"id": "a", "members": ["mcu.A", "target.A"]}],
-  "assumptions": [],
-  "expected": {"routeable": true}
-}
