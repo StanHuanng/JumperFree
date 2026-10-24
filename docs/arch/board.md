@@ -1,10 +1,10 @@
-# V0.1 板级计划（M2）
+# V0.1 板级计划
 
-M2 提供纯、确定性的开关计划编译与校验，不执行设备 I/O；JF2、拆分事务及固件属于 M3/M4。所有配置均未经硬件验证，不能把软件测试结果当作物理连通证据。原有 ROUTE_JSON、HOST_JSON、路由算法和 LED 编译行为保持原样。
+板级层提供纯、确定性的开关计划编译与校验，不执行设备 I/O；JF2 事务、拆分下发及固件尚未实现。所有配置均未经硬件验证，不能把软件测试结果当作物理连通证据。
 
 ## 配置与身份
 
-逻辑目录 `boards/v01/` 随包分发，实际位置为 `jumperfree/board/boards/v01/`，通过 setuptools package-data 纳入安装包。默认 `BoardProfile.load()` 从模块旁加载，安装后无需仓库工作目录。`BoardProfile.load(path)` 和 CLI `--board-dir DIR` 可加载外部目录，其内必须有以下五个文件：
+逻辑目录 `boards/v01/` 随包分发，实际位置为 `python/src/jumperfree/board/boards/v01/`，通过 setuptools package-data 纳入安装包。默认 `BoardProfile.load()` 从模块旁加载，安装后无需仓库工作目录。`BoardProfile.load(path)` 和 CLI `--board-dir DIR` 可加载外部目录，其内必须有以下五个文件：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -18,7 +18,7 @@ M2 提供纯、确定性的开关计划编译与校验，不执行设备 I/O；J
 
 `topology_id = sha256(canonical_json({"topology": topology, "known_bad_crosspoints": points}).encode("utf-8")).hexdigest()[:16]`。坏点使用 `[chip_index,x,y]` 数组，排序、去重后计算身份；坏点顺序不改变身份。任何坏点集合变化都改变身份。
 
-**DEFER：坏点从资源图移除。** 现有 routing 无过滤交叉点的公开钩子，M2 不改路由算法。board 的 `reject_bad_crosspoints` 拒绝使用坏点的状态/计划并返回 `PLAN_BAD_CROSSPOINT`；不能宣称路由器已自动避让。未来增加图过滤后仍须保留计划检查。
+**DEFER：坏点从资源图移除。** 现有 routing 无过滤交叉点的公开钩子，本次清理不改路由算法。board 的 `reject_bad_crosspoints` 拒绝使用坏点的状态/计划并返回 `PLAN_BAD_CROSSPOINT`；不能宣称路由器已自动避让。未来增加图过滤后仍须保留计划检查。
 
 ## 类型与标签
 
@@ -34,21 +34,21 @@ SwitchPlan 包含 schema=`jf.switch-plan/1`、base_epoch、topology_id、breaks�
 
 `compile_plan(old,new,prof,base_epoch=0)` 要求两状态拓扑相同（否则 `PLAN_TOPOLOGY_MISMATCH`），且与 profile 相同（否则 `PLAN_BOARD_MISMATCH`）。编译比较每个物理交叉点的 **net ID 与标签**：均相同则不下发，归属或标签变化则先断再通。`disturbed_nets` 为共有 net 中交叉点集合发生变化者的排序 ID 列表，表示重排可能打断在线电路。
 
-`verify_plan(old,plan,prof)` 从旧影子重放：严格检查 break 原本闭合、make 原本断开、阶段合法、topology_id 匹配、完整影子 CRC 匹配、标签归属合法，并对恢复的状态调用 `routing.crossbar.find_shorts`。任何重放不一致统一为 `PLAN_VERIFY_FAILED`。编译还独立比较重放影子与目标影子，并用目标声明的 net 成员再检查短接。超过 `limits.max_ops` 返回 `PLAN_TOO_LARGE`；拆分和跨事务中间态检查留给 M3 service。
+`verify_plan(old,plan,prof)` 从旧影子重放：严格检查 break 原本闭合、make 原本断开、阶段合法、topology_id 匹配、完整影子 CRC 匹配、标签归属合法，并对恢复的状态调用 `routing.crossbar.find_shorts`。任何重放不一致统一为 `PLAN_VERIFY_FAILED`。编译还独立比较重放影子与目标影子，并用目标声明的 net 成员再检查短接。超过 `limits.max_ops` 返回 `PLAN_TOO_LARGE`；拆分和跨事务中间态检查尚未实现。
 
 校验返回 `{"nets": {net_id: {"crosspoints": [["C1",x,y],...]}}, "meta": {"tags": {net_id: tag}}}` 视图。`state_crosspoints_from_shadow(shadow,prof,tags)` 提供相同反向映射供后续 adopt-device 使用；影子无法恢复意图、声明成员或路由 lines，因此不伪造完整 RoutingState。
 
-BBM 单调性：break 阶段只删除 old 的边；break 结束后保留的边都是 target 的边；make 阶段仅加入 target 的边。每个前缀因而是 old 或 target 的子集，也必定是二者并集的子集。两个端点状态都无短接时，各前缀也无短接。P1–P3 使用标准库种子随机的创建、删除、任意状态转换和真实重排覆盖往返、每个前缀的安全与字节级确定性。
+BBM 单调性：break 阶段只删除 old 的边；break 结束后保留的边都是 target 的边；make 阶段仅加入 target 的边。每个前缀因而是 old 或 target 的子集，也必定是二者并集的子集。两个端点状态都无短接时，各前缀也无短接。测试覆盖往返、每个前缀的安全与字节级确定性。
 
 ## verified 与命令行
 
-board.toml 的 topology、pinmap、limits、calibration 四段均参与 profile，当前全为 `verified=false`，没有证据。非 false 只接受 `"bench"`、`"hil"`，要求 evidence 指向板目录内 `docs/hw/` 下的已有文件；不得逃出目录。CI 还要求这些证据文件出现在相对 PR 基线的修改列表中。工具不得自动翻转 verified。
+board.toml 的 topology、pinmap、limits、calibration 四段均参与 profile，当前全为 `verified=false`，没有证据。非 false 只接受 `"bench"`、`"hil"`，要求 evidence 指向板目录内 `docs/hw/` 下的已有文件；不得逃出目录。工具不得自动翻转 verified。
 
 ```sh
 python -m jumperfree route xbar init --topology v01 --state out/new.json
 python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/new.json
 python -m jumperfree route plan --new out/new.json --base-epoch 0
-python -m jumperfree route plan --old out/old.json --new out/new.json --board-dir jumperfree/board/boards/v01
+python -m jumperfree route plan --old out/old.json --new out/new.json --board-dir python/src/jumperfree/board/boards/v01
 ```
 
 未提供 `--old` 时使用与 new 拓扑相同的空状态。CLI 只读文件，不保存标签或操作设备。使用未验证配置时在摘要前输出：
@@ -60,13 +60,3 @@ PLAN_JSON <规范计划JSON>
 ```
 
 `--require-verified` 使当前出厂配置返回 `BOARD_UNVERIFIED`，不输出横幅。失败输出 `PLAN FAIL <CODE>: <message>` 和 `PLAN_JSON {"error":...,"ok":false}`。信封由 `core.error_envelope` 生成：板级错误 layer=plan，路由状态错误 layer=routing，retryable=false、state_changed=no。成功退出 0，失败退出 1，argparse 参数错误退出 2。子命令在顶层 CLI 接线，routing 不导入 board。
-
-## 计划大小统计
-
-```sh
-python scripts/run_plan_stats.py --seed 7 --trials 60 --out out/plan-stats.json
-```
-
-board-side helper 重放 V0.1 随机工作负载（创建启用有界 rearrange、删除），逐步保留标签并编译计划；报告每步 ops 的 min/mean/max、max_ops 与超限步数。seed=7、60 步的初始结果：min=2、mean≈2.967、max=4、max_ops=256、超限=0。CI 给此任务一分钟超时。
-
-该统计仅适用于 V0.1；V5-scale 芯片数超过两片，不能使用 V0.1 profile。原 `routing.scale_eval` 与 `scripts/run_scale_eval.py` 保持不变，继续独立评估 V5 路由。

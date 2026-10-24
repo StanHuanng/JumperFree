@@ -1,6 +1,6 @@
-# 开关影子与 CRC（M2 规范）
+# 开关影子与 CRC
 
-本规范约束 M3 Python MockDevice 与 M4 固件，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。
+本规范约束 Python MockDevice 与后续固件，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。
 
 ## 内存值与线格式
 
@@ -31,7 +31,7 @@
 - 整个 160 字节中，仅绝对偏移 0=`03`、17=`04`、32=`21`、101=`05` 非零。
 - 固定 `shadow_crc = 0xdab003e1`。
 
-`tests/core/test_shadow.py` 用独立拼接的字节与 CRC 字面量锁定此例，M4 应采用同一向量。
+`tests/core/test_shadow.py` 用独立拼接的字节与 CRC 字面量锁定此例，固件应采用同一向量。
 
 ## 操作重放
 

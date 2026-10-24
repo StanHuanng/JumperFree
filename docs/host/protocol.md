@@ -4,7 +4,7 @@ JF1 是供 Stage-1 Host 和后续 F103 固件对接的行协议。当前实现�
 
 ## 冻结基线
 
-[vectors/protocol/jf1.vec](../../vectors/protocol/jf1.vec) 是当前 MockTransport 行为的规范冻结基线，包含成功应答、完整 STATUS 与精确错误消息；格式及执行规则见 [共享向量说明](../../vectors/README.md)。后续 Python MockDevice、C 单测与 jf_sim 共用这些向量，JF1 保持兼容，新增协议能力使用并存的 JF2。向量通过仅代表软件一致，未经硬件验证。
+[protocol/vectors/jf1.vec](../../protocol/vectors/jf1.vec) 是当前 MockTransport 行为的规范冻结基线，包含成功应答、完整 STATUS 与精确错误消息；格式及执行规则见 [共享向量说明](../../protocol/README.md)。后续 Python MockDevice、C 单测与 jf_sim 共用这些向量，JF1 保持兼容，新增协议能力使用并存的 JF2。向量通过仅代表软件一致，未经硬件验证。
 
 ## 帧格式
 
@@ -67,6 +67,6 @@ I/O 故障通过 `OSError` 报告，HostSession 转为结构化 `TRANSPORT_ERROR
 
 `MockTransport()` 默认模拟 16 个全黑 Clip，支持分段写入和按行排队应答。`MockTransport(responses=[...])` 禁用自动模拟，仅按序返回指定 bytes，用于测试坏帧、设备 ERR 或迟到应答；显式传入空列表可模拟无应答。Mock 的空读取立即返回，不模拟真实耗时。该模型不含开关、拓扑或固件驱动。
 
-## JF2（M3a）
+## JF2
 
-独立前缀的事务、租约、故障与 MockDevice 规范见 [JF2 主机与内存设备](jf2.md)。JF1 字节和 HostSession 保持冻结；当前全部为软件验证，未经硬件验证。
+独立前缀的事务、租约、故障与 MockDevice 规范见 [JF2 主机与内存设备](../../protocol/jf2.md)。JF1 字节和 HostSession 保持冻结；当前全部为软件验证，未经硬件验证。

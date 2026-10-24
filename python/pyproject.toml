@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jumperfree"
+version = "0.1.0"
+description = "JumperFree v1.0 host software: routing, board plans, and JF2 device communication"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+host = ["pyserial"]
+
+[project.scripts]
+jumperfree = "jumperfree.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["jumperfree*"]
+
+[tool.setuptools.package-data]
+"jumperfree.board" = ["boards/v01/*.toml", "boards/v01/*.json"]

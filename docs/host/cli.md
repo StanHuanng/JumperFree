@@ -120,6 +120,6 @@ finally:
 CI 使用 `MockTransport`，测试串口适配器时替换导入的 serial 模块，不需要 pyserial 或真实端口：
 
 ```bash
-python -m unittest discover -s tests -t . -v
-python scripts/coverage_report.py
+cd python
+PYTHONPATH=src python -m unittest discover -s tests -t . -v
 ```

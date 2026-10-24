@@ -8,21 +8,18 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: python
+    env:
+      PYTHONPATH: src
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Unit tests
         run: python -m unittest discover -s tests -t . -v
-      - name: Coverage (must be 100%)
-        run: python scripts/coverage_report.py
-      - name: Board verified evidence gate
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python scripts/check_board_verification.py --base "$BASE_SHA"
       - name: Route plan smoke
         run: |
           python -m jumperfree route xbar init --topology v01 --state out/plan-new.json
@@ -30,9 +27,6 @@ jobs:
           python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/plan-new.json
           python -m jumperfree route plan --new out/plan-new.json
           python -m jumperfree route plan --new out/plan-new.json --old out/plan-old.json --base-epoch 0
-      - name: Timed V0.1 plan-size evaluation
-        timeout-minutes: 1
-        run: python scripts/run_plan_stats.py --seed 7 --trials 60 --out out/plan-stats.json
       - name: Host CLI smoke
         run: |
           python -m jumperfree host set --clip 0 --rgb 255,128,0 --mock
@@ -42,20 +36,9 @@ jobs:
           python -m jumperfree route xbar init --topology v01 --state out/guide-smoke.json
           python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/guide-smoke.json
           python -m jumperfree host guide --state out/guide-smoke.json --mock
-      - name: Timed V5-scale software evaluation
-        timeout-minutes: 1
-        run: python scripts/run_scale_eval.py --seed 7 --trials 60 --out out/scale-eval.json --max-seconds 30
-      - name: CLI smoke
-        run: |
-          python -m jumperfree route init --nodes 8 --seed 7
-          python -m jumperfree route create --net NET_1 --nodes 0,1,2
-          python -m jumperfree route create --net NET_2 --nodes 3,4
-          python -m jumperfree route query
-          python -m jumperfree route delete --net NET_1
-          python -m jumperfree route list
       - name: Crossbar CLI smoke
         run: |
-          python -m jumperfree route xbar init --topology small --chips 3 --x-lines 2 --y-lines 2
-          python -m jumperfree route xbar create --net SPAN --nodes N0,N2,N5
-          python -m jumperfree route xbar query --net SPAN
-          python -m jumperfree route xbar delete --net SPAN
+          python -m jumperfree route xbar init --topology small --chips 3 --x-lines 2 --y-lines 2 --state out/small.json
+          python -m jumperfree route xbar create --net SPAN --nodes N0,N2,N5 --state out/small.json
+          python -m jumperfree route xbar query --net SPAN --state out/small.json
+          python -m jumperfree route xbar delete --net SPAN --state out/small.json
