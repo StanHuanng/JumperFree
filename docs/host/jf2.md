@@ -112,9 +112,11 @@ SAFE 下拒绝命令不修改影子；所有校验错误均不执行开关。模
 
 ## 主机 session 与故障注入
 
-`Jf2Session(transport, clock=time.monotonic, frame_timeout=0.3, retries=2)`；clock 返回秒。`request(tokens, n_ops=None)` 用锁保证一个未决请求；成功 BEGIN 自动记 n_ops，直接 COMMIT 可显式传 0..256 的 n_ops。每次发送（包括重试和 QUERY）前调用可选 reset_input。默认最多三次同字节发送，只在 TIMEOUT 重试。SerialTransport 的新 reset_input 调 pyserial.reset_input_buffer；JF1 readline 与 HostSession 不变。JF2 串口读取暂时把单次 timeout 缩短到剩余总 deadline，再恢复原配置；其他 Transport 的 readline 必须有有限超时。
+`Jf2Session(transport, clock=time.monotonic, frame_timeout=0.3, retries=2)`；clock 返回秒。`request(tokens, n_ops=None)` 用锁保证一个未决请求；成功 BEGIN 自动记 n_ops，直接 COMMIT 可显式传 0..256 的 n_ops。主机只保留当前 OPEN 事务的计数；成功 COMMIT（含 QUERY 恢复）、ABORT、HELLO、ALLOPEN 和 close 清理相应记录，COMMIT 恢复的 QUERY 确认 ABORTED 也清理；校验失败或结果仍 OPEN/未知时保留。已完成事务的 COMMIT 重放须显式传 n_ops，设备的四条结果缓存不变。每次发送（包括重试和 QUERY）前调用可选 reset_input。默认最多三次同字节发送，只在 TIMEOUT 重试。
 
-每次尝试从发送前计算总 deadline；丢弃坏行、JF1、不同 cmd、id、seq、PING/LEASE/SELFTEST 参数、CFG key、LED count 和 HELLO nonce 的回复，持续读到截止。到点包括迟到的正确回复也 TIMEOUT。ERR 帧无 cmd/id（协议本身限制），不能做关联；清输入后收到的合法 JF2 ERR 直接 DEVICE_ERROR。输出来回无流水线/异步事件。短写为 SHORT_WRITE，OSError 为 TRANSPORT_ERROR，关闭后为 SESSION_CLOSED；close 幂等。
+采用 JF2 专用扩展 `SerialTransport.readline_until(deadline, clock=...)`：直接调用 pyserial `read(1)`，每个字节前检查绝对 deadline 并重算 `timeout=min(原 timeout, 剩余秒数)`；遇到 LF、空读、513 字节或截止即返回，finally 恢复原 timeout。连续到达的非 LF 字节不能重新开始总计时。JF2 会话传入同一个注入 clock。reset_input 调 pyserial.reset_input_buffer；JF1 的 SerialTransport.readline、HostSession 和 MockTransport JF1 路径保持冻结。其他 Transport 可实现同一 deadline 扩展；回退 readline 的实现必须自行保证有界返回，会话无法中断任意阻塞的第三方调用。
+
+每次尝试从发送前计算总 deadline；本次尝试内累积分片（空读不清空），到 LF 后只解析一次，最大 512 字节含 LF。超长行按 BAD_FRAME 丢弃，并持续丢到该行 LF 才重新同步，不能把其中形似正确回复的后缀当新帧；其他坏行同样在完整 LF 边界后恢复。重试从清输入后的空组帧状态开始；若 Transport 没有 reset_input，则跨尝试/请求保留尚未同步的状态，旧行的剩余部分必须先丢到 LF。丢弃坏行、JF1、不同 cmd、id、seq、PING/LEASE/SELFTEST 参数、CFG key、LED count 和 HELLO nonce 的回复，持续读到截止。到点包括迟到的正确回复也 TIMEOUT。ERR 帧无 cmd/id（协议本身限制），不能做关联；清输入后收到的合法 JF2 ERR 直接 DEVICE_ERROR。输出来回无流水线/异步事件。短写为 SHORT_WRITE，OSError 为 TRANSPORT_ERROR，关闭后为 SESSION_CLOSED；close 幂等。
 
 COMMIT deadline 为 `1 + 0.005*n_ops` 秒，仅发送一次；TIMEOUT 后发送 TXN QUERY（查询也按普通超时/重试）。COMMITTED 且信息完整时构造 TXN COMMIT 成功响应，保留返回字段并加 replayed=1；ABORTED 抛 COMMIT_UNRESOLVED，details.state_changed="no"；OPEN/UNKNOWN/未知状态/信息缺失抛同码，state_changed="unknown"。QUERY 自身超时、设备错误或断连也带 state_changed="unknown"，设备原码仍保留。未声称 QUERY 为 UNKNOWN 时设备一定没切换。
 

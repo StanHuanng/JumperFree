@@ -107,10 +107,11 @@ class SessionTests(unittest.TestCase):
 
     def test_serial_bounded_read_and_reset_preserve_jf1_read(self):
         serial=mock.Mock();connection=serial.Serial.return_value;connection.timeout=1
-        connection.readline.return_value=b'JF2 OK INFO\n';connection.write.side_effect=len
+        connection.read.side_effect=[bytes([value]) for value in b'JF2 OK INFO\n'];connection.write.side_effect=len
         with mock.patch('jumperfree.host.transport.importlib.import_module',return_value=serial):
             transport=SerialTransport('port')
         s=Jf2Session(transport);s.request(['INFO'])
         connection.reset_input_buffer.assert_called_once_with();self.assertEqual(connection.timeout,1)
-        connection.readline.side_effect=OSError('read')
+        connection.readline.assert_not_called()
+        connection.read.side_effect=OSError('read')
         self.error('TRANSPORT_ERROR',s.request,['INFO']);self.assertEqual(connection.timeout,1)

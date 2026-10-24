@@ -26,6 +26,8 @@ class Jf2Session:
         self._lock = threading.Lock()
         self._closed = False
         self._ops: dict[str, int] = {}
+        self._rx_line = bytearray()
+        self._rx_discarding = False
 
     def request(self, cmd_tokens: Iterable[str], *, n_ops: int | None = None) -> Jf2Response:
         if isinstance(cmd_tokens, (str, bytes)):
@@ -41,14 +43,20 @@ class Jf2Session:
                     if type(count) is not int or not 0 <= count <= 256:
                         raise HostError("BAD_ARG", "COMMIT requires known n_ops in 0..256")
                     try:
-                        return self._exchange(tokens, frame, 1 + 0.005 * count, 0)
+                        response = self._exchange(tokens, frame, 1 + 0.005 * count, 0)
                     except HostError as exc:
                         if exc.code != "TIMEOUT":
                             raise
-                        return self._resolve_commit(tokens[2])
-                response = self._exchange(tokens, frame, self.frame_timeout, self.retries)
+                        response = self._resolve_commit(tokens[2])
+                else:
+                    response = self._exchange(tokens, frame, self.frame_timeout, self.retries)
                 if tokens[:2] == ("TXN", "BEGIN"):
+                    self._ops.clear()
                     self._ops[tokens[2]] = int(tokens[4])
+                elif tokens[:2] in {("TXN", "COMMIT"), ("TXN", "ABORT")}:
+                    self._ops.pop(tokens[2], None)
+                elif tokens[0] == "HELLO" or tokens[:2] == ("SW", "ALLOPEN"):
+                    self._ops.clear()
                 return response
             except OSError as exc:
                 raise HostError("TRANSPORT_ERROR", str(exc), operation=" ".join(tokens[:2])) from exc
@@ -67,15 +75,15 @@ class Jf2Session:
             reset = getattr(self.transport, "reset_input", None)
             if reset is not None:
                 reset()
+                self._rx_discarding = False
+            else:
+                # Without a physical flush, an unfinished old line still needs LF.
+                self._rx_discarding |= bool(self._rx_line)
+            self._rx_line.clear()
             deadline = self.clock() + timeout
             if self.transport.write(frame) != len(frame):
                 raise HostError("SHORT_WRITE", "transport did not write entire request")
-            while self.clock() < deadline:
-                bounded_read = getattr(self.transport, "readline_with_timeout", None)
-                line = (bounded_read(max(0.0, deadline - self.clock())) if bounded_read is not None
-                        else self.transport.readline())
-                if self.clock() >= deadline:
-                    break
+            for line in self._read_lines(deadline):
                 try:
                     response = parse_jf2_response(line)
                 except HostError as exc:
@@ -88,6 +96,30 @@ class Jf2Session:
                     continue
                 return response
         raise HostError("TIMEOUT", "no matching response before deadline")
+
+    def _read_lines(self, deadline: float) -> Iterable[bytes]:
+        """组装当前尝试的分片；超长行丢弃到 LF 后才重新同步。"""
+        line = self._rx_line
+        bounded_read = getattr(self.transport, "readline_until", None)
+        while self.clock() < deadline:
+            chunk = (bounded_read(deadline, clock=self.clock) if bounded_read is not None
+                     else self.transport.readline())
+            expired = self.clock() >= deadline
+            for value in chunk:
+                if not self._rx_discarding:
+                    line.append(value)
+                    if len(line) > 512:
+                        line.clear()
+                        self._rx_discarding = True
+                if value == 10:
+                    complete = bytes(line)
+                    line.clear()
+                    discarded = self._rx_discarding
+                    self._rx_discarding = False
+                    if not discarded and not expired and self.clock() < deadline:
+                        yield complete
+            if expired:
+                break
 
     def _resolve_commit(self, txn_id: str) -> Jf2Response:
         tokens = ("TXN", "QUERY", txn_id)
@@ -103,6 +135,8 @@ class Jf2Session:
             info = {key: value for key, value in result.kv.items() if key != "result"}
             info["replayed"] = "1"
             return Jf2Response(True, ("TXN", "COMMIT"), (txn_id,), info)
+        if state == "ABORTED":
+            self._ops.pop(txn_id, None)
         raise HostError("COMMIT_UNRESOLVED", "COMMIT result is " + str(state),
                         state_changed="no" if state == "ABORTED" else "unknown", result=state)
 
@@ -110,6 +144,8 @@ class Jf2Session:
         with self._lock:
             if not self._closed:
                 self._closed = True
+                self._ops.clear()
+                self._rx_line.clear()
                 try:
                     self.transport.close()
                 except OSError as exc:
