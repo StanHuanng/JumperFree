@@ -9,6 +9,7 @@ from .board.cli import add_plan_parser, run_plan
 from .host.cli import add_host_parser, run_host
 from .routing.cli import add_route_parser, run_route
 from .service.guide import run_guide
+from .service.device_demo import run_device_demo
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "host":
+        if args.host_command == "device-demo":
+            return run_device_demo(args)
         if args.host_command == "guide":
             return run_guide(args)
         return run_host(args)

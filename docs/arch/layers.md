@@ -7,7 +7,7 @@
 | `core/` | SCHEMA 常量、规范 JSON、CRC32、JfError、错误信封、影子布局与 BBM 操作助手、协议向量解析 | 无其他包 |
 | `routing/` | 交叉开关资源图、16 节点拓扑、确定性建网、短接检查 | `core` |
 | `board/` | BoardProfile、SwitchPlan、compile/verify、标签与影子转换、LED 指引编译 | `core`、`routing` |
-| `host/` | JF1/JF2 编解码、Transport、HostSession、MockDevice | `core` |
+| `host/` | JF1/JF2 编解码、Transport、HostSession、Jf2Session、DeviceClient、MockDevice | `core` |
 | `service/` | 状态文件读取、板级编译与设备会话的应用编排 | 上述各包 |
 
 同包内部可以导入；`core` 不依赖其他 JumperFree 包，`routing` 不依赖 `host`，`routing` 和
@@ -28,3 +28,8 @@
 板级配置随包存放于 `python/src/jumperfree/board/boards/v01/`，默认安装后可加载，也可指定
 外部目录，详见 [板级计划](board.md)。共享影子布局位于 core，host MockDevice 无需导入 board。
 当前没有真实开关下发、硬件保护或电气连接验证能力。
+
+`DeviceClient` 通过结构接口接收现有 `SwitchPlan`，不导入 board 或 routing。
+它负责 JF2 会话、影子一致性检查、分帧提交和结果确认，复用 core 的 BBM 重放。
+`host device-demo --mock` 由顶层 CLI 分发至 `service/device_demo.py`，仅在服务层
+编排路由测试数据、板级编译和 MockDevice 执行。详见 [DeviceClient](../host/device-client.md)。

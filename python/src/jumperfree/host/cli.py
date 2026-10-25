@@ -1,4 +1,4 @@
-"""CLI adapter for the Stage-1 Clip LED host."""
+"""CLI arguments for JF1 Clip LEDs and the mock JF2 device demo."""
 
 from __future__ import annotations
 
@@ -14,8 +14,10 @@ from .transport import MockTransport, SerialTransport
 
 
 def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
-    host = subparsers.add_parser("host", help="control Clip0–15 RGB LEDs over JF1 UART")
+    host = subparsers.add_parser("host", help="JF1 LEDs and JF2 mock switch execution")
     commands = host.add_subparsers(dest="host_command", required=True)
+    demo = commands.add_parser("device-demo", help="apply two switch plans to MockDevice (no hardware)")
+    demo.add_argument("--mock", action="store_true", required=True, help="use MockDevice only")
     for name in ("set", "clear", "clear-all", "status", "guide"):
         command = commands.add_parser(name, help=f"{name} Clip LEDs")
         connection = command.add_mutually_exclusive_group(required=True)
