@@ -1,8 +1,8 @@
-# agent/
+# Agent tools
 
-这里以后放置 Agent Skill。
+工具 API 位于 [`python/src/jumperfree/agent/`](../python/src/jumperfree/agent/)，
+通过 `import jumperfree.agent` 使用。本目录仅作指引。
 
-Agent 负责把用户的自然语言需求转换为 Netlist，并调用 `python/` 提供的路由、连接计划与
-主机通信接口。Agent 不直接操作 CH446Q 寄存器，也不自行决定开关闭合方式。
-
-当前目录只有说明文件，尚未实现 Agent Skill。
+接口、共享 Mock 会话、连续调用示例及 MCP 注册建议见
+[`docs/agent/tools.md`](../docs/agent/tools.md)。v0.1 仅提供四个 Mock 工具，
+没有自然语言解析或真实硬件集成；`verified=false`，进程退出丢失会话。
