@@ -123,3 +123,10 @@ CI 使用 `MockTransport`，测试串口适配器时替换导入的 serial 模�
 cd python
 PYTHONPATH=src python -m unittest discover -s tests -t . -v
 ```
+
+## JF2 DeviceClient demo
+
+Run `PYTHONPATH=src python3 -m jumperfree host device-demo --mock` from `python/`
+for two compiled switch-plan applications to MockDevice. It prints a human
+summary and `HOST_JSON`, always with hardware `verified=false`.
+See [DeviceClient usage and failure semantics](device-client.md).

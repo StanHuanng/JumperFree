@@ -242,3 +242,34 @@ class HostCliTests(unittest.TestCase):
                     runpy.run_module("jumperfree", run_name="__main__")
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("HOST_JSON ", output.getvalue())
+
+    def test_device_demo_applies_two_mock_plans_with_explicit_evidence(self) -> None:
+        code, payload, summary = self.run_cli("device-demo", "--mock")
+        self.assertEqual(code, 0)
+        self.assertIn("MockDevice", summary)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["transport"], "mock")
+        self.assertFalse(payload["verified"])
+        self.assertEqual(payload["initial"]["epoch"], 0)
+        self.assertEqual(len(payload["results"]), 2)
+        for epoch, result in enumerate(payload["results"], 1):
+            self.assertEqual(result["kind"], "success")
+            self.assertEqual(result["evidence"], "mock-device-applied")
+            self.assertEqual(result["plan_kind"], "software-plan-ok")
+            self.assertFalse(result["verified"])
+            self.assertEqual(result["status"]["epoch"], epoch)
+        self.assertGreater(payload["results"][1]["opened"], 0)
+        self.assertGreater(payload["results"][1]["closed"], 0)
+
+    def test_device_demo_failure_still_closes_mock_and_prints_json(self) -> None:
+        from jumperfree.host.mock_device import MockDevice
+
+        device = MockDevice()
+        device.fault("hw")
+        with mock.patch("jumperfree.service.device_demo.MockDevice", return_value=device):
+            code, payload, summary = self.run_cli("device-demo", "--mock")
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["error"]["code"], "DEVICE_FAULT")
+        self.assertIn("FAIL", summary)
+        self.assertTrue(device.closed)
+        self.assertFalse(payload["verified"])
