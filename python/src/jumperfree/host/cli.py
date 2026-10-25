@@ -1,4 +1,4 @@
-"""CLI arguments for JF1 Clip LEDs and the mock JF2 device demo."""
+"""CLI arguments for JF1 Clip LEDs and mock JF2 demos."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ def add_host_parser(subparsers: argparse._SubParsersAction[Any]) -> None:
     commands = host.add_subparsers(dest="host_command", required=True)
     demo = commands.add_parser("device-demo", help="apply two switch plans to MockDevice (no hardware)")
     demo.add_argument("--mock", action="store_true", required=True, help="use MockDevice only")
+    control_demo = commands.add_parser("control-demo", help="run control scenarios A–E on MockDevice")
+    control_demo.add_argument("--mock", action="store_true", required=True, help="use MockDevice only")
     for name in ("set", "clear", "clear-all", "status", "guide"):
         command = commands.add_parser(name, help=f"{name} Clip LEDs")
         connection = command.add_mutually_exclusive_group(required=True)
