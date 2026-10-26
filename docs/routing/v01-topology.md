@@ -47,6 +47,8 @@ Clip15 — C2 X7 — [交叉点 C2 X7/Y0] — C2 Y0
 
 ## CLI 与 Python API
 
+以下示例在仓库的 `python/` 目录设置 `PYTHONPATH=src` 后运行。
+
 ```bash
 python3 -m jumperfree route xbar init --topology v01 --state out/v01-state.json
 python3 -m jumperfree route xbar create --net span --nodes Clip0,Clip15 --state out/v01-state.json

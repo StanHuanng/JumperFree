@@ -67,7 +67,8 @@ client's stop. Reconciliation and automatic recovery are outside v0.1.
 This is an in-memory, single-owner, empty-Mock-only composition. It does not
 restore intent from an existing device shadow, monitor external changes, persist
 state or support concurrent owners. Board wiring, timing and electrical safety
-remain unverified on hardware; Mock success is software evidence only. There is
-no Agent/NL, HTTP, database or STM32 integration. A future Agent adapter should
-call these methods and preserve their structured errors and unresolved-state
-gate; it must not turn acknowledgment into a retry or recovery policy.
+remain unverified on hardware; Mock success is software evidence only.
+The existing [Mock agent tools](../agent/tools.md) call these methods and preserve
+their structured errors and write gate. They never expose or call
+`acknowledge_unresolved`. There is no natural-language parser, HTTP server,
+database or STM32 integration.

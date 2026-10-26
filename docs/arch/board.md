@@ -44,11 +44,14 @@ BBM 单调性：break 阶段只删除 old 的边；break 结束后保留的边�
 
 board.toml 的 topology、pinmap、limits、calibration 四段均参与 profile，当前全为 `verified=false`，没有证据。非 false 只接受 `"bench"`、`"hil"`，要求 evidence 指向板目录内 `docs/hw/` 下的已有文件；不得逃出目录。工具不得自动翻转 verified。
 
+在仓库的 `python/` 目录设置 `PYTHONPATH=src` 后运行：
+
 ```sh
 python -m jumperfree route xbar init --topology v01 --state out/new.json
+cp out/new.json out/old.json
 python -m jumperfree route xbar create --net a --nodes Clip0,Clip15 --state out/new.json
 python -m jumperfree route plan --new out/new.json --base-epoch 0
-python -m jumperfree route plan --old out/old.json --new out/new.json --board-dir python/src/jumperfree/board/boards/v01
+python -m jumperfree route plan --old out/old.json --new out/new.json --board-dir src/jumperfree/board/boards/v01
 ```
 
 未提供 `--old` 时使用与 new 拓扑相同的空状态。CLI 只读文件，不保存标签或操作设备。使用未验证配置时在摘要前输出：

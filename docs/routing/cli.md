@@ -4,6 +4,8 @@
 输出一行人类摘要，以及一行键排序、紧凑编码的 `ROUTE_JSON {...}`。成功退出 0；路由或状态错误
 退出 1，并在 JSON 的 `error.code` 中给出原因。
 
+以下示例在仓库的 `python/` 目录设置 `PYTHONPATH=src` 后运行。
+
 ```bash
 python3 -m jumperfree route xbar init --topology v01 --state out/v01-state.json
 python3 -m jumperfree route xbar create --net span --nodes Clip0,Clip15 --state out/v01-state.json
