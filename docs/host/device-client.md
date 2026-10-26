@@ -84,3 +84,11 @@ epoch, shadow, and faults explicitly before creating a new client and compiling
 a replacement plan. This API does not automatically abort, re-arm after faults,
 clear connections, or retry an uncertain plan. STATUS/TAGS reads are checked for
 consistency but cannot provide atomic snapshots against an external writer.
+
+## LED batch and all-open
+
+`led_batch(updates)` takes `{clip: (r,g,b)}` or `(clip, rgb)` pairs, validates everything
+(clip 0..15, no duplicates, 0..255) before any I/O, and sends `LED BATCH n clip:rrggbb...`;
+unlisted clips are unchanged. Device errors such as `SAFE_MODE` raise unchanged; it never
+arms and does not set the stop latch. `all_open()` sends `SW ALLOPEN` in any state, then drops
+`status` and requires a new `connect()` before `apply`; it does not clear the stop latch.

@@ -6,7 +6,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..board import BoardProfile, compile_plan, state_with_tags
+from ..board import BoardProfile, compile_led_plan, compile_plan, state_with_tags
 from ..core import JfError
 from ..host import ApplyResult, DeviceClient, HostError
 from ..routing.steiner import (
@@ -23,6 +23,7 @@ class ControlResult:
     error: JfError | None = None
     apply: ApplyResult | None = None
     plan: dict[str, Any] | None = None
+    led: dict[str, Any] | None = None
     device: str = field(default="MockDevice", init=False)
     verified: bool = field(default=False, init=False)
 
@@ -36,6 +37,8 @@ class ControlResult:
         }
         if self.plan is not None:  # only read-only planning results carry this key
             data["plan"] = copy.deepcopy(self.plan)
+        if self.led is not None:  # only guide_leds results carry this key
+            data["led"] = copy.deepcopy(self.led)
         return data
 
 
@@ -58,6 +61,7 @@ class ControlService:
         self._epoch = initial.epoch
         self._blocked = False
         self._unconfirmed = False
+        self._all_opened = False  # permanent for this service; never cleared by acknowledge
 
     def create(self, net_id: str, nodes: list[str]) -> ControlResult:
         return self._write("create", net_id, nodes)
@@ -80,11 +84,57 @@ class ControlService:
         """Clear only the service write gate, without confirming or recovering anything."""
         self._blocked = False
 
+    def guide_leds(self) -> ControlResult:
+        """One LED BATCH of the confirmed netlist's colors; no switch change, no arming.
+
+        Always sends all 16 clips: clips in a net get its palette color, every other clip
+        is sent as 000000, so stale guidance is cleared and n == 16. SAFE_MODE and other
+        device errors are returned unchanged; LED failures never block later writes.
+        """
+        if self._all_opened:
+            return self._reestablish_result("guide_leds")
+        if self._blocked:
+            return self._blocked_result("guide_leds")
+        if self._unconfirmed:
+            return ControlResult(False, "guide_leds", error=HostError(
+                "STATE_UNCONFIRMED", "device state is unconfirmed; refusing to guide from stale intent"))
+        try:
+            frames = compile_led_plan(self._confirmed).frames
+            updates = {clip: tuple(frames.get(clip, (0, 0, 0))) for clip in range(16)}
+            count = self._client.led_batch(updates)
+        except (JfError, HostError) as exc:
+            return ControlResult(False, "guide_leds", error=exc)
+        led = {"count": count, "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
+        return ControlResult(True, "guide_leds", router=copy.deepcopy(crossbar_query(self._confirmed)),
+                             led=led)
+
+    def all_open(self) -> ControlResult:
+        """Open every switch (legal in any state). Not a recovery path: the service stays
+        unconfirmed with netlist=null and refuses all writes/plans/guides until a new
+        session (HELLO + arm) is built. acknowledge_unresolved cannot lift this."""
+        try:
+            self._client.all_open()
+        except HostError as exc:
+            self._unconfirmed = True
+            if exc.code != "DEVICE_ERROR":  # reply lost: the device may or may not be open
+                self._blocked = True
+            return ControlResult(False, "all_open", error=exc)
+        self._all_opened = True
+        self._unconfirmed = True
+        return ControlResult(True, "all_open")
+
+    def _reestablish_result(self, operation: str) -> ControlResult:
+        return ControlResult(False, operation, error=HostError(
+            "SESSION_REESTABLISH_REQUIRED", "all_open succeeded; build a new session (HELLO, arm) before further use",
+        ))
+
     def plan(self, action: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
         """Route and compile a create/modify/delete on a copy; no device I/O, no state change."""
         if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
             return ControlResult(False, "plan", error=HostError(
                 "BAD_ARG", "action must be create, modify or delete"))
+        if self._all_opened:
+            return self._reestablish_result("plan")
         if self._blocked:
             return self._blocked_result("plan")
         router, plan, candidate, error = self._candidate(action, net_id, nodes)
@@ -120,6 +170,8 @@ class ControlService:
         return router, plan, candidate, None
 
     def _write(self, operation: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+        if self._all_opened:
+            return self._reestablish_result(operation)
         if self._blocked:
             return self._blocked_result(operation)
         router, plan, candidate, error = self._candidate(operation, net_id, nodes)
