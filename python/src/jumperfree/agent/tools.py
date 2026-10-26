@@ -1,4 +1,4 @@
-"""Bind these four functions to one MockAgentSession for tool registration."""
+"""Bind these five functions to one MockAgentSession for tool registration."""
 
 from __future__ import annotations
 
@@ -17,6 +17,13 @@ TOOL_DESCRIPTIONS = {
         "profile nodes. Do not guess ambiguous nodes or rewrite user intent."
     ),
     "delete_net": "Delete only the net with this exact nonblank name on MockDevice.",
+    "plan_net_change": (
+        "Read-only dry run of create/modify/delete on a copy of confirmed intent: "
+        "routes and compiles, returns candidate router, break/make counts and occupied "
+        "nodes. No device I/O; never changes netlist, epoch or device. A plan is a "
+        "software result, not an applied connection. Errors match the direct tool. "
+        "verified is always false."
+    ),
     "get_state": (
         "Query session intent without device I/O. Only netlist is confirmed "
         "intent; router is candidate/history, never device confirmation. After "
@@ -44,12 +51,23 @@ def _input_schema(*, nodes: bool = False, name: bool = True) -> dict[str, object
             "required": list(properties), "additionalProperties": False}
 
 
+def _plan_schema() -> dict[str, object]:
+    schema = _input_schema(nodes=True)
+    schema["properties"] = {"action": {
+        "type": "string", "enum": ["create", "modify", "delete"],
+        "description": "Which change to plan; nodes is ignored for delete and may be omitted.",
+    }, **schema["properties"]}
+    schema["required"] = ["action", "name"]
+    return schema
+
+
 TOOL_SCHEMAS = {
     name: {"name": name, "description": TOOL_DESCRIPTIONS[name], "inputSchema": schema}
     for name, schema in (
         ("create_net", _input_schema(nodes=True)),
         ("modify_net", _input_schema(nodes=True)),
         ("delete_net", _input_schema()),
+        ("plan_net_change", _plan_schema()),
         ("get_state", _input_schema(name=False)),
     )
 }
@@ -68,6 +86,12 @@ def modify_net(session: MockAgentSession, name: str, nodes: list[str]) -> dict[s
 def delete_net(session: MockAgentSession, name: str) -> dict[str, object]:
     """Delete exactly name through ControlService."""
     return session._invoke("delete", name)
+
+
+def plan_net_change(session: MockAgentSession, action: str, name: str,
+                    nodes: list[str] | None = None) -> dict[str, object]:
+    """Dry-run create/modify/delete; nodes is required for create and modify only."""
+    return session._invoke("plan", action, name, nodes)
 
 
 def get_state(session: MockAgentSession) -> dict[str, object]:

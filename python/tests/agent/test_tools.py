@@ -472,14 +472,17 @@ class AgentToolTests(unittest.TestCase):
         other = self.make_session()
         self.assertEqual(self.nets(get_state(other)), {})
         self.assertFalse(hasattr(other, "acknowledge_unresolved"))
-        self.assertEqual(set(TOOL_SCHEMAS), {"create_net", "modify_net", "delete_net", "get_state"})
+        self.assertEqual(set(TOOL_SCHEMAS), {"create_net", "modify_net", "delete_net", "get_state",
+                                              "plan_net_change"})
 
-    def test_mcp_schemas_and_binding_use_only_four_user_facing_signatures(self):
+    def test_mcp_schemas_and_binding_use_only_user_facing_signatures(self):
         self.assertEqual(set(TOOL_DESCRIPTIONS), set(TOOL_SCHEMAS))
         for name, definition in TOOL_SCHEMAS.items():
             self.assertEqual(definition["name"], name)
             self.assertEqual(definition["description"], TOOL_DESCRIPTIONS[name])
             schema = definition["inputSchema"]
+            if name == "plan_net_change":
+                continue  # covered in test_plan.py
             expected = [] if name == "get_state" else ["name"]
             if name in {"create_net", "modify_net"}:
                 expected.append("nodes")
