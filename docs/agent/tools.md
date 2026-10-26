@@ -1,7 +1,8 @@
-# Mock agent tools v0.1
+# Agent tools and MCP server
 
-`jumperfree.agent` provides exactly seven tools over one `MockAgentSession`.
-The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
+`jumperfree.agent` provides seven tools over one `AgentSession` (`MockAgentSession`
+for mock). They are served over stdio by `jumperfree.agent.mcp_server`; agent behavior
+rules are in [`SKILL.md`](../../python/src/jumperfree/agent/SKILL.md). The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
 `DeviceClient`, and creates one `ControlService`. Reuse that session for every
 call in a conversation. State lives only in memory and is lost at process exit;
 new sessions start empty. Close explicitly in `finally` or use `with`.
@@ -145,44 +146,34 @@ finally:
     session.close()
 ```
 
-## MCP registration suggestions
+## MCP server
 
-`TOOL_SCHEMAS` maps each tool name to an MCP-style definition containing
-`name`, `description`, and `inputSchema`. `TOOL_DESCRIPTIONS` exposes the same
-descriptions separately. Required fields and argument types are in the schemas;
-the distinct-node and exact-profile-name rules are also checked at runtime by
-the existing control/router layer. No MCP server or SDK is included.
-
-For a future MCP host, create one session for its owner and bind the functions:
-
-```python
-from functools import partial
-from jumperfree.agent import (
-    MockAgentSession, TOOL_SCHEMAS,
-    create_net, modify_net, delete_net, get_state,
-)
-
-with MockAgentSession() as session:
-    handlers = {tool.__name__: partial(tool, session) for tool in (
-        create_net, modify_net, delete_net, get_state,
-    )}
-    definitions = list(TOOL_SCHEMAS.values())
-    # Register definitions and handlers in the host; keep its serving loop
-    # inside this context. Serialize calls for this single-owner session.
+```sh
+cd python && PYTHONPATH=src python3 -m jumperfree.agent.mcp_server [--port /dev/ttyACM0]
 ```
 
-Suggested agent instructions: require explicit net names and exact profile
-nodes; request clarification for ambiguous intent; pass arguments unchanged;
-present structured failures unchanged. Treat `netlist=null` as unconfirmed, and
-never report candidate/history as current wiring. Stop writes on
-`CONTROL_BLOCKED`; never acknowledge, retry, clear, or recover automatically.
-Always present Mock results as `verified=false`.
+Without `--port` the session is a fresh `MockDevice`; with it, a serial session
+(pyserial required, imported lazily). The server is hand-written newline-delimited
+JSON-RPC 2.0 over stdio and supports `initialize`, `ping`, `tools/list` and
+`tools/call`; notifications are ignored. Trade-off: the needed subset is small, so no
+MCP SDK is used and the default install stays dependency-free (no `agent` extra).
+
+- One owner, one session for the process lifetime, calls handled strictly in order;
+  the session is closed on EOF.
+- `tools/list` returns `TOOL_SCHEMAS`. Arguments must match the schema exactly
+  (missing or extra keys → JSON-RPC `-32602`; nothing is guessed or dropped).
+- `tools/call` returns the tool dict verbatim as `structuredContent` and as JSON
+  text; `isError` is `not ok`. Error codes (`CONTROL_BLOCKED`, `SAFE_MODE`, ...) are
+  never rewritten, retried or recovered by the server.
+
+Example registration (MCP client config): command `python3`, args
+`["-m", "jumperfree.agent.mcp_server"]`, env `PYTHONPATH=<repo>/python/src`.
 
 ## Limits
 
-Mock only, single owner, sequential calls, initially empty device, no database
+Software/Mock evidence only, single owner, sequential calls, initially empty device, no database
 or persistence, no external-change monitoring or reconciliation. There is no
-natural-language parser, LLM SDK, HTTP/MCP server, alternate adapter, hardware,
+natural-language parser, LLM SDK, HTTP server, alternate adapter, hardware,
 STM32 or firmware integration. Hardware wiring, timing and electrical behavior
 remain unverified. The layer does not construct JF2 frames, CRCs, router paths,
 Y channels, crosspoints or physical plans.
