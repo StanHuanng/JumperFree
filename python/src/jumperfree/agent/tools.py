@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..host import HostError
-from ..service.control import ControlResult
 from .session import MockAgentSession
 
 
@@ -57,36 +55,19 @@ TOOL_SCHEMAS = {
 }
 
 
-def _validation_error(operation: str, name: str, nodes: list[str] | None = None,
-                      *, check_nodes: bool = False) -> dict[str, object] | None:
-    # Reuse existing error codes. Semantic node/routing checks belong to ControlService.
-    error = None
-    if not isinstance(name, str) or not name.strip():
-        error = HostError("INVALID_NET_ID", "net id must be a non-empty string")
-    elif check_nodes and (not isinstance(nodes, list)
-                          or not all(isinstance(node, str) for node in nodes)):
-        error = HostError("BAD_ARG", "nodes must be an array of strings")
-    if error is not None:
-        return ControlResult(False, operation, error=error).as_dict()
-    return None
-
-
 def create_net(session: MockAgentSession, name: str, nodes: list[str]) -> dict[str, object]:
     """Create name as ControlService's net_id; do not change supplied nodes."""
-    failure = _validation_error("create", name, nodes, check_nodes=True)
-    return failure if failure is not None else session._invoke("create", name, nodes)
+    return session._invoke("create", name, nodes)
 
 
 def modify_net(session: MockAgentSession, name: str, nodes: list[str]) -> dict[str, object]:
     """Replace one net through a single ControlService modify operation."""
-    failure = _validation_error("modify", name, nodes, check_nodes=True)
-    return failure if failure is not None else session._invoke("modify", name, nodes)
+    return session._invoke("modify", name, nodes)
 
 
 def delete_net(session: MockAgentSession, name: str) -> dict[str, object]:
     """Delete exactly name through ControlService."""
-    failure = _validation_error("delete", name)
-    return failure if failure is not None else session._invoke("delete", name)
+    return session._invoke("delete", name)
 
 
 def get_state(session: MockAgentSession) -> dict[str, object]:

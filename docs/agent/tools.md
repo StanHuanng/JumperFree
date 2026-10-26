@@ -50,8 +50,10 @@ The [ControlService contract](../service/control.md) applies unchanged. Routing
 and compilation failures never apply or change confirmed intent. Each valid
 write delegates once; failed applies are never retried by this layer. Any failed
 apply makes subsequent queries return `STATE_UNCONFIRMED` with `netlist=null`.
-For `unresolved`, `timeout`, or `transport`, subsequent writes return
-`CONTROL_BLOCKED` before routing or execution. Queries perform no device I/O.
+For `unresolved`, `timeout`, or `transport`, or any failed apply with
+`state_changed="yes"` or `"unknown"`, subsequent writes return `CONTROL_BLOCKED`
+before routing or execution. This includes `device_error` results whose state
+change is unknown. Queries perform no device I/O.
 
 No tool exposes or calls `acknowledge_unresolved`, clears nets/faults, reconnects,
 or bypasses the service write gate or the client's stop. The session sets frame

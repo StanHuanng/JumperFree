@@ -4,6 +4,7 @@ from contextlib import ExitStack
 import copy
 from dataclasses import replace
 from functools import partial
+from itertools import product
 import json
 import unittest
 from unittest import mock
@@ -302,6 +303,73 @@ class AgentToolTests(unittest.TestCase):
                 if kind == "unresolved":
                     self.assertEqual(wire.device.epoch, 2)
 
+    def test_inflight_device_errors_preserve_unknown_state_and_block_writes(self):
+        for command, cause in product((b"BEGIN", b"ADD", b"COMMIT"), ("lease", "hw")):
+            with self.subTest(command=command, cause=cause):
+                wire = FaultWire()
+                wire.device.write(b"JF2 HELLO 2 a\nJF2 LEASE 1000\n")
+                wire.device.reset_input()
+                session = self.make_session(device=wire, fault_wire=True)
+                self.assert_result(create_net(session, "A", ["Clip1", "Clip8"]), "create")
+                original = copy.deepcopy(session._control._confirmed)
+                history = get_state(session)["netlist"]
+                epoch = session._control._epoch
+
+                def fail(data):
+                    if data.startswith(b"JF2 TXN " + command + b" "):
+                        if cause == "lease":
+                            wire.device.advance_ms(1000)
+                        else:
+                            wire.device.fault("hw")
+
+                wire.before_write = fail
+                control_modify = session._control.modify
+                results = []
+
+                def modify(*args):
+                    result = control_modify(*args)
+                    results.append(result)
+                    return result
+
+                with mock.patch.object(session._control, "modify", side_effect=modify):
+                    result = modify_net(session, "A", ["Clip1", "Clip10"])
+                self.assertEqual(result, results[0].as_dict())
+                self.assert_result(result, "modify", "DEVICE_ERROR")
+                self.assertEqual(result["apply"]["kind"], "device_error")
+                self.assertEqual(result["apply"]["state_changed"], "unknown")
+                self.assertEqual(result["error"], result["apply"]["error"])
+                writes = list(wire.device.writes)
+                with (
+                    mock.patch.object(session._client, "apply") as apply,
+                    mock.patch.object(session._client, "connect") as connect,
+                    mock.patch.object(ControlService, "acknowledge_unresolved") as acknowledge,
+                ):
+                    for tool, args, operation in (
+                        (create_net, ("B", ["Clip2", "Clip9"]), "create"),
+                        (modify_net, ("A", ["Clip1", "Clip10"]), "modify"),
+                        (delete_net, ("A",), "delete"),
+                    ):
+                        blocked = tool(session, *args)
+                        self.assert_result(blocked, operation, "CONTROL_BLOCKED")
+                        self.assertEqual(blocked, getattr(session._control, operation)(*args).as_dict())
+                    queried = get_state(session)
+                    self.assert_result(queried, "query", "STATE_UNCONFIRMED")
+                    self.assertEqual(queried, session._control.query().as_dict())
+                    self.assertEqual(queried["router"], history)
+                    stopped = session._client._stopped
+                    self.assertIsNotNone(stopped)
+                    shadow, faults = wire.device.shadow, wire.device.faults
+                    session.close()
+                    session.close()
+                    self.assertEqual(wire.device.shadow, shadow)
+                    self.assertEqual(wire.device.faults, faults)
+                    self.assertIs(session._client._stopped, stopped)
+                    for call in (apply, connect, acknowledge):
+                        call.assert_not_called()
+                self.assertEqual(session._control._confirmed, original)
+                self.assertEqual(session._control._epoch, epoch)
+                self.assertEqual(wire.device.writes, writes)
+
     def test_results_and_input_are_detached_from_session_state(self):
         nodes = ["Clip1", "Clip8"]
         result = create_net(self.session, "A", nodes)
@@ -383,12 +451,18 @@ class AgentToolTests(unittest.TestCase):
         self.session._client.close()
 
     def test_closed_session_cannot_claim_confirmed_state_or_write(self):
-        self.session.close()
+        self.assert_result(create_net(self.session, "A", ["Clip1", "Clip8"]), "create")
+        shadow = self.session._device.shadow
         writes = list(self.session._device.writes)
+        self.session.close()
+        self.assertEqual(self.session._device.shadow, shadow)
         for tool, args, operation in (
             (create_net, ("A", ["Clip1", "Clip8"]), "create"),
             (modify_net, ("A", ["Clip1", "Clip8"]), "modify"),
             (delete_net, ("A",), "delete"), (get_state, (), "query"),
+            (create_net, ("", ["Clip1", "Clip8"]), "create"),
+            (modify_net, ("A", None), "modify"),
+            (delete_net, (None,), "delete"),
         ):
             self.assert_result(tool(self.session, *args), operation, "SESSION_CLOSED")
         self.assertEqual(self.session._device.writes, writes)
