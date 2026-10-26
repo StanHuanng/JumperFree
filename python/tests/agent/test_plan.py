@@ -1,6 +1,7 @@
 """plan_net_change is a read-only dry run: no state change, no device I/O."""
 
 import copy
+from dataclasses import replace
 import unittest
 from unittest import mock
 
@@ -8,6 +9,8 @@ from jumperfree.agent import (
     MockAgentSession, TOOL_DESCRIPTIONS, TOOL_SCHEMAS,
     create_net, delete_net, get_state, modify_net, plan_net_change,
 )
+from jumperfree.board import BoardProfile
+from jumperfree.core import canonical_json
 from jumperfree.host import ApplyResult, HostError
 
 
@@ -87,6 +90,88 @@ class PlanNetChangeTests(unittest.TestCase):
         self.session.close()
         closed = plan_net_change(self.session, "bogus", "", None)
         self.assertEqual(closed["error"]["code"], "SESSION_CLOSED")
+
+    def test_unhashable_or_non_string_action_is_bad_arg_without_side_effects(self):
+        for action in ([], {}, ["create"], {"create": 1}, set(), None, 1, b"create"):
+            with self.subTest(action=action):
+                before = self.snapshot()
+                with mock.patch.object(self.session._client, "apply") as apply:
+                    result = plan_net_change(self.session, action, "C", ["Clip3", "Clip10"])
+                    direct = self.session._control.plan(action, "C", ["Clip3", "Clip10"]).as_dict()
+                    apply.assert_not_called()
+                for r in (result, direct):
+                    self.assertFalse(r["ok"])
+                    self.assertEqual(r["error"]["code"], "BAD_ARG")
+                    self.assertIsNone(r["netlist"])
+                    self.assertFalse(r["verified"])
+                self.assertEqual(self.snapshot(), before)
+
+    def test_closed_session_beats_non_string_action(self):
+        self.session.close()
+        for action in ([], {}):
+            result = plan_net_change(self.session, action, "C", None)
+            self.assertEqual(result["error"]["code"], "SESSION_CLOSED")
+
+    def assert_plan_failure_matches_execution(self, session, code, action, name, nodes):
+        direct = {"create": create_net, "modify": modify_net}[action]
+        dev = session._device
+        def snap():
+            return (get_state(session), copy.deepcopy(dev.shadow), dev.epoch,
+                    list(dev.writes), session._control._epoch,
+                    copy.deepcopy(session._control._confirmed))
+        before = snap()
+        with mock.patch.object(session._client, "apply") as apply:
+            planned = plan_net_change(session, action, name, nodes)
+            self.assertEqual(snap(), before)
+            executed = direct(session, name, nodes)
+            apply.assert_not_called()
+        self.assertEqual(snap(), before)
+        self.assertFalse(planned["ok"])
+        self.assertFalse(executed["ok"])
+        self.assertEqual(planned["error"]["code"], code)
+        self.assertEqual(planned["error"], executed["error"])
+        if code == "PLAN_TOO_LARGE":
+            self.assertIsNotNone(planned["router"])
+        else:
+            self.assertIsNone(planned["router"])
+        self.assertEqual(planned["router"], executed["router"])
+        self.assertIsNone(planned["apply"])
+        self.assertFalse(planned["verified"])
+        self.assertNotIn("plan", planned)
+
+    def make_session(self, profile):
+        with mock.patch("jumperfree.agent.session.BoardProfile.load", return_value=profile):
+            session = MockAgentSession()
+        self.addCleanup(session.close)
+        return session
+
+    def test_plan_too_large_matches_direct_create_and_modify(self):
+        profile = BoardProfile.load()
+        limited = replace(profile, limits=replace(profile.limits, max_ops=1))
+        session = self.make_session(limited)
+        self.assert_plan_failure_matches_execution(
+            session, "PLAN_TOO_LARGE", "create", "A", ["Clip1", "Clip8"])
+        # modify path: seed a net with the normal profile limits, then shrink max_ops.
+        seeded = MockAgentSession()
+        self.addCleanup(seeded.close)
+        create_net(seeded, "A", ["Clip1", "Clip8"])
+        seeded._client._max_ops = 1
+        seeded._control._profile = limited
+        self.assert_plan_failure_matches_execution(
+            seeded, "PLAN_TOO_LARGE", "modify", "A", ["Clip1", "Clip10"])
+
+    def test_no_free_path_matches_direct_create_and_modify(self):
+        profile = BoardProfile.load()
+        topology = profile.topology
+        topology["inter_chip_links"] = []
+        isolated = replace(profile, topology_json=canonical_json(topology))
+        session = self.make_session(isolated)
+        self.assert_plan_failure_matches_execution(
+            session, "NO_FREE_PATH", "create", "A", ["Clip1", "Clip8"])
+        create_net(session, "B", ["Clip0", "Clip1"])
+        self.assertTrue(get_state(session)["ok"])
+        self.assert_plan_failure_matches_execution(
+            session, "NO_FREE_PATH", "modify", "B", ["Clip0", "Clip8"])
 
     def test_blocked_session_rejects_plan_like_a_write(self):
         failure = ApplyResult("timeout", error=HostError("TIMEOUT", "t"))

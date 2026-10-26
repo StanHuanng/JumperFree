@@ -53,7 +53,7 @@ class MockAgentSession:
             )).as_dict()
         if operation == "plan":
             action, name, nodes = args
-            if action not in {"create", "modify", "delete"}:
+            if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
                 return ControlResult(False, "plan", error=HostError(
                     "BAD_ARG", "action must be create, modify or delete")).as_dict()
             failure = _validation_error(

@@ -82,7 +82,7 @@ class ControlService:
 
     def plan(self, action: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
         """Route and compile a create/modify/delete on a copy; no device I/O, no state change."""
-        if action not in {"create", "modify", "delete"}:
+        if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
             return ControlResult(False, "plan", error=HostError(
                 "BAD_ARG", "action must be create, modify or delete"))
         if self._blocked:
