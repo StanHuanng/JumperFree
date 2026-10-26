@@ -54,8 +54,11 @@ query `router` describes historical confirmed intent. Query does no device I/O.
 After any failed apply, query conservatively returns `STATE_UNCONFIRMED` and
 `netlist=null`; its historical router view does not assert current device state.
 
-`unresolved`, `timeout` and `transport` apply results also block all writes before
-routing or execution (`CONTROL_BLOCKED`). `acknowledge_unresolved()` returns
+`unresolved`, `timeout` and `transport` apply results, and any failed apply with
+`state_changed="yes"` or `"unknown"`, block all writes before routing or execution
+(`CONTROL_BLOCKED`). This includes interrupted commits and in-flight transaction
+failures that may have opened all connections after a lease expiry or fault.
+`acknowledge_unresolved()` returns
 `None` and clears only that service flag. It does not accept a candidate, change
 confirmed intent/epoch, refresh query, clear DeviceClient's stop, clear device
 faults or prove the device unchanged. A subsequent write still encounters the

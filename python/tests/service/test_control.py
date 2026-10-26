@@ -6,6 +6,7 @@ import contextlib
 import copy
 from dataclasses import replace
 import io
+from itertools import product
 import json
 import unittest
 from unittest import mock
@@ -27,8 +28,10 @@ class FaultWire:
         self.now = 0.0
         self.mode = None
         self.drop = False
+        self.before_write = lambda data: None
 
     def write(self, data):
+        self.before_write(data)
         if self.mode == "transport":
             raise OSError("injected wire failure")
         if self.mode == "timeout" or self.mode == "unresolved" and b"TXN COMMIT" in data:
@@ -274,6 +277,8 @@ class ControlServiceTests(unittest.TestCase):
         result = self.service.delete("NET_A")
         self.assert_failure(result, "DEVICE_ERROR", "delete")
         self.assertEqual(result.apply.state_changed, "yes")
+        self.assertTrue(self.service._blocked)
+        self.assert_failure(self.service.delete("NET_A"), "CONTROL_BLOCKED", "delete")
         self.assertEqual(self.service._confirmed, original)
         self.assertEqual(self.service._epoch, 2)
         history = self.service.query()
@@ -281,6 +286,69 @@ class ControlServiceTests(unittest.TestCase):
         self.assertEqual(history.router, crossbar_query(original))
         self.service.acknowledge_unresolved()
         self.assertIsNone(self.service.query().netlist)
+
+    def test_inflight_unknown_state_blocks_writes_and_preserves_confirmed_epoch_and_tags(self):
+        cases = product((b"BEGIN", b"ADD", b"COMMIT"), ("lease", "hw"),
+                        ("device_error", "timeout", "transport"))
+        for command, cause, failure in cases:
+            with self.subTest(command=command, cause=cause, failure=failure):
+                wire = FaultWire()
+                wire.device.write(b"JF2 HELLO 2 a\nJF2 LEASE 1000\n")
+                wire.device.reset_input()
+                client, service = self.make_service(wire, self.profile,
+                                                    clock=lambda: wire.now, frame_timeout=0.05, retries=0)
+                self.assertTrue(service.create("NET_A", ["Clip1", "Clip8"]).ok)
+                original = copy.deepcopy(service._confirmed)
+                prefix = b"JF2 TXN " + command + b" "
+
+                def fail(data):
+                    if data.startswith(prefix):
+                        if cause == "lease":
+                            wire.device.advance_ms(1000)
+                        else:
+                            wire.device.fault("hw")
+                        wire.mode = None if failure == "device_error" else failure
+
+                wire.before_write = fail
+                result = service.modify("NET_A", ["Clip1", "Clip10"])
+                self.assertFalse(result.ok)
+                expected_kind = "unresolved" if command == b"COMMIT" and failure == "timeout" else failure
+                self.assertEqual(result.apply.kind, expected_kind)
+                self.assertEqual(result.apply.state_changed, "unknown")
+                self.assertIsNone(result.netlist)
+                self.assertEqual(wire.device.epoch, 2)
+                self.assertFalse(any(wire.device.shadow.closed))
+                self.assertTrue(service._blocked)
+                self.assertEqual(service._confirmed, original)
+                self.assertEqual(service._epoch, 1)
+                history = service.query()
+                self.assert_failure(history, "STATE_UNCONFIRMED", "query")
+                self.assertEqual(history.router, crossbar_query(original))
+                writes = list(wire.device.writes)
+                with (
+                    mock.patch("jumperfree.service.control.crossbar_create_net") as create,
+                    mock.patch("jumperfree.service.control.crossbar_delete_net") as delete,
+                    mock.patch("jumperfree.service.control.compile_plan") as compile_,
+                    mock.patch.object(client, "apply") as apply,
+                ):
+                    for operation, args in (("create", ("B", ["Clip2", "Clip9"])),
+                                            ("modify", ("NET_A", ["Clip1", "Clip10"])),
+                                            ("delete", ("NET_A",))):
+                        self.assert_failure(getattr(service, operation)(*args), "CONTROL_BLOCKED", operation)
+                    for call in (create, delete, compile_, apply):
+                        call.assert_not_called()
+                service.acknowledge_unresolved()
+                self.assertEqual(service.query().as_dict(), history.as_dict())
+                wire.before_write = lambda data: None
+                wire.mode, wire.drop = None, False
+                with mock.patch("jumperfree.service.control.compile_plan", wraps=compile_plan) as compile_:
+                    retried = service.modify("NET_A", ["Clip1", "Clip10"])
+                self.assertEqual(compile_.call_args.kwargs["base_epoch"], 1)
+                self.assertEqual(retried.apply.as_dict(), result.apply.as_dict())
+                self.assertTrue(service._blocked)
+                self.assertEqual(wire.device.writes, writes)
+                self.assertEqual(service._confirmed, original)
+                self.assertEqual(service._epoch, 1)
 
     def test_query_and_returned_views_are_detached_and_do_no_io(self):
         nodes = ["Clip1", "Clip8"]
