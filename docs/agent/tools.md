@@ -1,6 +1,6 @@
 # Mock agent tools v0.1
 
-`jumperfree.agent` provides exactly four tools over one `MockAgentSession`.
+`jumperfree.agent` provides exactly five tools over one `MockAgentSession`.
 The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
 `DeviceClient`, and creates one `ControlService`. Reuse that session for every
 call in a conversation. State lives only in memory and is lost at process exit;
@@ -8,7 +8,7 @@ new sessions start empty. Close explicitly in `finally` or use `with`.
 
 ## Interface
 
-Import `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`,
+Import `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`, `plan_net_change`,
 `TOOL_SCHEMAS`, and `TOOL_DESCRIPTIONS` from `jumperfree.agent`.
 The Python functions take the session as their first argument. Bind it once so
 the registered tools have these user-facing arguments:
@@ -18,6 +18,7 @@ the registered tools have these user-facing arguments:
 | `create_net` | `name: str, nodes: list[str]` | `create(net_id=name, nodes=nodes)` |
 | `modify_net` | `name: str, nodes: list[str]` | `modify(net_id=name, nodes=nodes)` |
 | `delete_net` | `name: str` | `delete(net_id=name)` |
+| `plan_net_change` | `action: "create"\|"modify"\|"delete", name: str, nodes: list[str]` (omit `nodes` for delete) | `plan(action, net_id, nodes)` |
 | `get_state` | none | `query()` |
 
 `name` is required and must contain a non-whitespace character. It is passed
@@ -43,7 +44,32 @@ details and apply results from ControlService are preserved. Shape validation
 uses existing `INVALID_NET_ID` / `BAD_ARG` codes. Calls after close return
 `SESSION_CLOSED` before shape validation, including for malformed arguments.
 Connection/close failures raise the existing
-structured exceptions; they occur outside the four tool calls.
+structured exceptions; they occur outside the tool calls.
+
+## Planning vs. execution
+
+`plan_net_change` is a read-only dry run; `create_net`, `modify_net` and
+`delete_net` are the execution tools and are unchanged. The three intents are
+expressed by `action` (`create`, `modify`, `delete`) with the same `name` and
+`nodes` arguments as the matching execution tool (`nodes` only for create and
+modify). It deep-copies the confirmed intent, runs the router and `compile_plan`,
+and returns `operation="plan"` with:
+
+- `router`: the candidate routes (software result, not current wiring);
+- `plan`: `action`, `net`, `base_epoch`, `breaks` / `makes` (switch operations to
+  open / close), `disturbed_nets`, `occupied_nodes` (nodes in the candidate
+  netlist) and `occupancy`;
+- `netlist=null`, `apply=null`, `verified=false`.
+
+It performs no device I/O (no `TXN BEGIN`, no LED), and leaves confirmed intent,
+epoch, tags and the device untouched. Failures return the same error code,
+message, details and `router` as the direct tool would for the same input
+(unknown node, duplicate/unknown net, capacity, shape errors). `SESSION_CLOSED`
+and `CONTROL_BLOCKED` are returned in the same precedence as for writes: a
+blocked session cannot be planned against, because its confirmed intent is no
+longer trustworthy. An unknown `action` returns `BAD_ARG`. A successful plan only
+shows what execution would attempt from the current confirmed state; execution may
+still fail at the device, and a plan is never evidence of connectivity.
 
 ## Confirmation and failure behavior
 

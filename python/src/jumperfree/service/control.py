@@ -22,17 +22,21 @@ class ControlResult:
     router: dict[str, Any] | None = None
     error: JfError | None = None
     apply: ApplyResult | None = None
+    plan: dict[str, Any] | None = None
     device: str = field(default="MockDevice", init=False)
     verified: bool = field(default=False, init=False)
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        data = {
             "ok": self.ok, "operation": self.operation,
             "netlist": copy.deepcopy(self.netlist), "router": copy.deepcopy(self.router),
             "error": copy.deepcopy(self.error.as_dict()) if self.error else None,
             "apply": self.apply.as_dict() if self.apply else None,
             "device": self.device, "verified": self.verified,
         }
+        if self.plan is not None:  # only read-only planning results carry this key
+            data["plan"] = copy.deepcopy(self.plan)
+        return data
 
 
 class ControlService:
@@ -76,11 +80,32 @@ class ControlService:
         """Clear only the service write gate, without confirming or recovering anything."""
         self._blocked = False
 
-    def _write(self, operation: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+    def plan(self, action: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+        """Route and compile a create/modify/delete on a copy; no device I/O, no state change."""
+        if action not in {"create", "modify", "delete"}:
+            return ControlResult(False, "plan", error=HostError(
+                "BAD_ARG", "action must be create, modify or delete"))
         if self._blocked:
-            return ControlResult(False, operation, error=HostError(
-                "CONTROL_BLOCKED", "acknowledge_unresolved is required before further writes",
-            ))
+            return self._blocked_result("plan")
+        router, plan, candidate, error = self._candidate(action, net_id, nodes)
+        if error is not None:
+            return ControlResult(False, "plan", router=router, error=error)
+        occupied = sorted({node for net in router["nets"] for node in net["nodes"]})
+        summary = {
+            "action": action, "net": net_id, "base_epoch": plan.base_epoch,
+            "breaks": len(plan.breaks), "makes": len(plan.makes),
+            "disturbed_nets": list(plan.disturbed_nets), "occupied_nodes": occupied,
+            "occupancy": copy.deepcopy(router["occupancy"]),
+        }
+        return ControlResult(True, "plan", router=router, plan=summary)
+
+    def _blocked_result(self, operation: str) -> ControlResult:
+        return ControlResult(False, operation, error=HostError(
+            "CONTROL_BLOCKED", "acknowledge_unresolved is required before further writes",
+        ))
+
+    def _candidate(self, operation: str, net_id: str, nodes: list[str] | None):
+        """Return (router, plan, candidate, error); the confirmed state is never mutated."""
         router = None
         try:
             candidate = copy.deepcopy(self._confirmed)
@@ -91,7 +116,15 @@ class ControlService:
             router = copy.deepcopy(crossbar_query(candidate))
             plan = compile_plan(self._confirmed, candidate, self._profile, base_epoch=self._epoch)
         except JfError as exc:
-            return ControlResult(False, operation, router=router, error=exc)
+            return router, None, None, exc
+        return router, plan, candidate, None
+
+    def _write(self, operation: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+        if self._blocked:
+            return self._blocked_result(operation)
+        router, plan, candidate, error = self._candidate(operation, net_id, nodes)
+        if error is not None:
+            return ControlResult(False, operation, router=router, error=error)
 
         result = self._client.apply(plan)
         if not result.ok:

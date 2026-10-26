@@ -51,6 +51,16 @@ class MockAgentSession:
             return ControlResult(False, operation, error=HostError(
                 "SESSION_CLOSED", "agent session is closed",
             )).as_dict()
+        if operation == "plan":
+            action, name, nodes = args
+            if action not in {"create", "modify", "delete"}:
+                return ControlResult(False, "plan", error=HostError(
+                    "BAD_ARG", "action must be create, modify or delete")).as_dict()
+            failure = _validation_error(
+                "plan", name, nodes, check_nodes=action in {"create", "modify"})
+            if failure is not None:
+                return failure
+            return self._control.plan(action, name, nodes).as_dict()
         if operation != "query":
             failure = _validation_error(
                 operation, *args, check_nodes=operation in {"create", "modify"},
