@@ -1,6 +1,6 @@
 # V0.1 板级计划
 
-板级层提供纯、确定性的开关计划编译与校验，不执行设备 I/O；JF2 事务、拆分下发及固件尚未实现。所有配置均未经硬件验证，不能把软件测试结果当作物理连通证据。
+板级层提供纯、确定性的开关计划编译与校验，不执行设备 I/O；JF2 事务由 host 执行，超过单事务容量的计划尚不支持拆分下发。所有配置均未经硬件验证，不能把软件测试结果当作物理连通证据。
 
 ## 配置与身份
 
@@ -24,7 +24,7 @@
 
 `Xp(chip,x,y)`、`SwitchOp(xp,on,tag)`、`SwitchPlan` 均为冻结、带 slots 的数据类。chip 为 0..1、x 为 0..7、y 为 0..7；X8..X15 在 V0.1 未接线，返回结构化 `BAD_ARG`。`Xp.bit()` 为 `x*8+y`。SwitchOp 标签范围为 0..15；实际闭合 net 使用 1..15，0 表示无标签。
 
-SwitchPlan 包含 schema=`jf.switch-plan/1`、base_epoch、topology_id、breaks、makes、expect_crc、disturbed_nets、tags。操作按 `(chip,x,y)` 排序，`to_wire_tokens()` 先返回全部 `-c:x:y`，再返回全部 `+c:x:y@tag`。`to_json()` 返回可 JSON 序列化的字典，操作记录为 `{chip,x,y,on,tag}`；外层用 `core.canonical_json()` 以排序键、无额外空白输出。expect_crc 是目标影子 CRC 的整数值，布局见 [shadow.md](shadow.md)。标签表复制为只读映射。
+SwitchPlan 包含 schema=`jf.switch-plan/1`、base_epoch、topology_id、breaks、makes、expect_crc、disturbed_nets、tags。base_epoch 为 uint32，与 JF2 一致；设备 epoch 是否匹配由 host 执行前检查。操作按 `(chip,x,y)` 排序，`to_wire_tokens()` 先返回全部 `-c:x:y`，再返回全部 `+c:x:y@tag`。`to_json()` 返回可 JSON 序列化的字典，操作记录为 `{chip,x,y,on,tag}`；外层用 `core.canonical_json()` 以排序键、无额外空白输出。expect_crc 是目标影子 CRC 的整数值，布局见 [shadow.md](shadow.md)。标签表复制为只读映射。
 
 标签存于状态的可选 `meta.tags`，不修改旧状态格式的其他键，读取方忽略未知键。`net_tags(state)` 优先读取仍存在 net 的旧标签，缺少标签时按 net ID 字典序分配最小空闲值；完全没有 meta 时即按字典序 1..n。删除 net 后遗留的标签项不再占位。
 
@@ -34,7 +34,7 @@ SwitchPlan 包含 schema=`jf.switch-plan/1`、base_epoch、topology_id、breaks�
 
 `compile_plan(old,new,prof,base_epoch=0)` 要求两状态拓扑相同（否则 `PLAN_TOPOLOGY_MISMATCH`），且与 profile 相同（否则 `PLAN_BOARD_MISMATCH`）。编译比较每个物理交叉点的 **net ID 与标签**：均相同则不下发，归属或标签变化则先断再通。`disturbed_nets` 为共有 net 中交叉点集合发生变化者的排序 ID 列表，表示重排可能打断在线电路。
 
-`verify_plan(old,plan,prof)` 从旧影子重放：严格检查 break 原本闭合、make 原本断开、阶段合法、topology_id 匹配、完整影子 CRC 匹配、标签归属合法，并对恢复的状态调用 `routing.crossbar.find_shorts`。任何重放不一致统一为 `PLAN_VERIFY_FAILED`。编译还独立比较重放影子与目标影子，并用目标声明的 net 成员再检查短接。超过 `limits.max_ops` 返回 `PLAN_TOO_LARGE`；拆分和跨事务中间态检查尚未实现。
+`verify_plan(old,plan,prof)` 从旧影子重放：严格检查 break 原本闭合且非零 tag 与旧影子一致（0 不指定旧标签）、make 原本断开、阶段合法、topology_id 匹配、完整影子 CRC 匹配、标签归属合法，并对每条占用的 X 线路建立虚拟节点后调用 `routing.crossbar.find_shorts`，覆盖外部配置中未挂接节点的线路。任何重放不一致统一为 `PLAN_VERIFY_FAILED`。编译还独立比较重放影子与目标影子，并用目标声明的 net 成员再检查短接。超过 `limits.max_ops` 返回 `PLAN_TOO_LARGE`；拆分和跨事务中间态检查尚未实现。
 
 校验返回 `{"nets": {net_id: {"crosspoints": [["C1",x,y],...]}}, "meta": {"tags": {net_id: tag}}}` 视图。`state_crosspoints_from_shadow(shadow,prof,tags)` 提供相同反向映射供后续 adopt-device 使用；影子无法恢复意图、声明成员或路由 lines，因此不伪造完整 RoutingState。
 

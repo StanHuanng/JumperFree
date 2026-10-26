@@ -45,7 +45,7 @@ class TypeTests(unittest.TestCase):
             plan.expect_crc = 2
         with self.assertRaises(JfError):
             replace(plan, schema='wrong')
-        for key, value in (('base_epoch', -1), ('base_epoch', True), ('expect_crc', 1 << 32)):
+        for key, value in (('base_epoch', -1), ('base_epoch', True), ('base_epoch', 1 << 32), ('expect_crc', 1 << 32)):
             with self.assertRaises(JfError):
                 replace(plan, **{key: value})
 
@@ -73,6 +73,57 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(cleared.breaks), 2)
         self.assertEqual(verify_plan(tagged, cleared, self.profile), {'nets': {}, 'meta': {'tags': {}}})
         self.assertEqual(compile_plan(self.empty, self.empty, self.profile).expect_crc, Shadow().shadow_crc())
+
+    def test_bbm_prefixes_preserve_tag_ownership_during_net_swap(self):
+        old = crossbar_create_net(self.empty, 'a', ['Clip0', 'Clip1'])
+        old = crossbar_create_net(old, 'b', ['Clip2', 'Clip3'])
+        old = crossbar_create_net(old, 'keep', ['Clip4', 'Clip5'])
+        new = crossbar_create_net(self.empty, 'b', ['Clip0', 'Clip1'])
+        new = crossbar_create_net(new, 'a', ['Clip2', 'Clip3'])
+        new = crossbar_create_net(new, 'keep', ['Clip4', 'Clip5'])
+        plan = compile_plan(old, new, self.profile)
+        self.assertEqual(plan.disturbed_nets, ('a', 'b'))
+        self.assertEqual((len(plan.breaks), len(plan.makes)), (4, 4))
+        image = shadow_from_state(old, self.profile)
+        for op in plan.breaks + plan.makes:
+            image = apply_ops(image, breaks=(op,)) if not op.on else apply_ops(image, makes=(op,))
+            state_crosspoints_from_shadow(image, self.profile, plan.tags)
+        self.assertEqual(image, shadow_from_state(state_with_tags(new, plan.tags), self.profile))
+        self.assertEqual(shadow_crc(image), plan.expect_crc)
+
+    def test_tuple_crosspoints_match_list_crosspoints(self):
+        tuples = copy.deepcopy(self.one)
+        tuples['nets']['z']['crosspoints'] = [tuple(point) for point in
+                                               tuples['nets']['z']['crosspoints']]
+        self.assertEqual(compile_plan(self.empty, tuples, self.profile),
+                         compile_plan(self.empty, self.one, self.profile))
+        noop = compile_plan(self.one, tuples, self.profile)
+        self.assertEqual(noop.to_wire_tokens(), [])
+        self.assertEqual(noop.disturbed_nets, ())
+
+    def test_break_tags_match_old_shadow_or_are_unspecified(self):
+        plan = compile_plan(self.one, self.empty, self.profile)
+        for tag in (0, 1):
+            changed = replace(plan, breaks=tuple(replace(op, tag=tag) for op in plan.breaks))
+            self.assertEqual(verify_plan(self.one, changed, self.profile)['nets'], {})
+        changed = replace(plan, breaks=tuple(replace(op, tag=2) for op in plan.breaks))
+        with self.assertRaises(PlanError) as caught:
+            verify_plan(self.one, changed, self.profile)
+        self.assertEqual(caught.exception.code, 'PLAN_VERIFY_FAILED')
+
+    def test_shadow_short_on_x_line_without_external_node(self):
+        topology = self.profile.topology
+        del topology['node_attachments']['Clip8']
+        profile = replace(self.profile, topology_json=canonical_json(topology))
+        image = apply_ops(Shadow(), makes=(SwitchOp(Xp(0, 0, 0), True, 1),
+                                          SwitchOp(Xp(1, 0, 0), True, 2)))
+        with self.assertRaises(PlanError) as caught:
+            state_crosspoints_from_shadow(image, profile, {'a': 1, 'b': 2})
+        self.assertEqual(caught.exception.code, 'PLAN_VERIFY_FAILED')
+        separate = apply_ops(Shadow(), makes=(SwitchOp(Xp(0, 0, 0), True, 1),
+                                             SwitchOp(Xp(1, 0, 1), True, 2)))
+        view = state_crosspoints_from_shadow(separate, profile, {'a': 1, 'b': 2})
+        self.assertEqual(view['nets']['b']['crosspoints'], [['C2', 0, 1]])
 
     def test_stable_tags_smallest_free_lexical_and_metadata_preserved(self):
         old = crossbar_create_net(self.one, 'b', ['Clip1', 'Clip2'])

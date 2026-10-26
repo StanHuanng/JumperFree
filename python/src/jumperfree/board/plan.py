@@ -98,9 +98,16 @@ def state_crosspoints_from_shadow(
             points[point] = tag
             nets[name]["crosspoints"].append([chips[chip], point.x, point.y])
     reject_bad_crosspoints(points, profile)
-    assignments = {node: x_owners[tuple(line)] for node, line in profile.topology["node_attachments"].items()
-                   if tuple(line) in x_owners}
-    shorts = find_shorts(profile.topology, [point for net in nets.values() for point in net["crosspoints"]],
+    # Assign every occupied X line, including those without external nodes.
+    topology = profile.topology
+    assignments = {}
+    for line, name in sorted(x_owners.items()):
+        node = f"@{line[0]}:X:{line[2]}"
+        while node in topology["node_attachments"]:
+            node = "@" + node
+        topology["node_attachments"][node] = list(line)
+        assignments[node] = name
+    shorts = find_shorts(topology, [point for net in nets.values() for point in net["crosspoints"]],
                          assignments)
     if shorts:
         raise PlanError("PLAN_VERIFY_FAILED", "影子包含跨 net 短接", shorts=shorts)
@@ -129,13 +136,14 @@ def compile_plan(
     makes = tuple(SwitchOp(xp, True, tag) for xp, (name, tag) in sorted(new_points.items())
                   if old_points.get(xp) != (name, tag))
     disturbed = tuple(name for name in sorted(set(old["nets"]) & set(new["nets"]))
-                      if old["nets"][name]["crosspoints"] != new["nets"][name]["crosspoints"])
+                      if {tuple(point) for point in old["nets"][name]["crosspoints"]}
+                      != {tuple(point) for point in new["nets"][name]["crosspoints"]})
     target = shadow_from_state(tagged_new, prof)
     plan = SwitchPlan(SCHEMA["plan"], base_epoch, prof.topology_id, breaks, makes,
                       shadow_crc(target), disturbed, tags)
     view = verify_plan(old, plan, prof)
     if (apply_ops(shadow_from_state(old, prof), plan.breaks, plan.makes) != target
-            or view["nets"] != {name: {"crosspoints": net["crosspoints"]}
+            or view["nets"] != {name: {"crosspoints": [list(point) for point in net["crosspoints"]]}
                                 for name, net in tagged_new["nets"].items()}):
         raise PlanError("PLAN_VERIFY_FAILED", "重放结果与目标状态不一致")
     # Also check declared routing memberships, independently of physical tag ownership.
@@ -149,11 +157,14 @@ def compile_plan(
 def verify_plan(old: dict[str, Any], plan: SwitchPlan, prof: BoardProfile) -> dict[str, Any]:
     before = shadow_from_state(old, prof)
     if len(plan.breaks) + len(plan.makes) > prof.limits.max_ops:
-        raise PlanError("PLAN_TOO_LARGE", "计划操作数超过 max_ops，M3 service 才负责拆分",
+        raise PlanError("PLAN_TOO_LARGE", "计划操作数超过 max_ops，尚不支持拆分下发",
                         max_ops=prof.limits.max_ops, ops=len(plan.breaks) + len(plan.makes))
     try:
         if plan.topology_id != prof.topology_id:
             raise PlanError("PLAN_VERIFY_FAILED", "计划 topology_id 不匹配")
+        for op in plan.breaks:
+            if op.tag and before.tags[op.xp.chip * 128 + op.xp.bit()] != op.tag:
+                raise PlanError("PLAN_VERIFY_FAILED", "断开操作标签与旧影子不匹配")
         after = apply_ops(before, plan.breaks, plan.makes)
         if shadow_crc(after) != plan.expect_crc:
             raise PlanError("PLAN_VERIFY_FAILED", "目标影子 CRC 不匹配")
