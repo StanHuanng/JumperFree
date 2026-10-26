@@ -89,8 +89,13 @@ class ControlService:
         """Clear only the service write gate, without confirming or recovering anything."""
         self._blocked = False
 
-    def guide_leds(self) -> ControlResult:
+    def guide_leds(self, action: str | None = None, net_id: str | None = None,
+                   nodes: list[str] | None = None) -> ControlResult:
         """One LED BATCH of the confirmed netlist's colors; no switch change, no arming.
+
+        With action/net_id/nodes (same meaning as plan) the colors are those of the
+        candidate netlist that plan would produce, so nodes can be lit before executing;
+        the confirmed state is not changed. Without them the confirmed netlist is lit.
 
         Always sends all 16 clips: clips in a net get its palette color, every other clip
         is sent as 000000, so stale guidance is cleared and n == 16. SAFE_MODE and other
@@ -103,14 +108,23 @@ class ControlService:
         if self._unconfirmed:
             return self._result(False, "guide_leds", error=HostError(
                 "STATE_UNCONFIRMED", "device state is unconfirmed; refusing to guide from stale intent"))
+        source, state = "confirmed", self._confirmed
+        if action is not None:
+            if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
+                return self._result(False, "guide_leds", error=HostError(
+                    "BAD_ARG", "action must be create, modify or delete"))
+            router, _, candidate, error = self._candidate(action, net_id, nodes)
+            if error is not None:
+                return self._result(False, "guide_leds", router=router, error=error)
+            source, state = "plan", candidate
         try:
-            frames = compile_led_plan(self._confirmed).frames
+            frames = compile_led_plan(state).frames
             updates = {clip: tuple(frames.get(clip, (0, 0, 0))) for clip in range(16)}
             count = self._client.led_batch(updates)
         except (JfError, HostError) as exc:
             return self._result(False, "guide_leds", error=exc)
-        led = {"count": count, "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
-        return self._result(True, "guide_leds", router=copy.deepcopy(crossbar_query(self._confirmed)),
+        led = {"source": source, "count": count, "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
+        return self._result(True, "guide_leds", router=copy.deepcopy(crossbar_query(state)),
                              led=led)
 
     def all_open(self) -> ControlResult:

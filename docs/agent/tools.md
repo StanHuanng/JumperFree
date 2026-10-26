@@ -29,7 +29,7 @@ the registered tools have these user-facing arguments:
 | `modify_net` | `name: str, nodes: list[str]` | `modify(net_id=name, nodes=nodes)` |
 | `delete_net` | `name: str` | `delete(net_id=name)` |
 | `plan_net_change` | `action: "create"\|"modify"\|"delete", name: str, nodes: list[str]` (omit `nodes` for delete) | `plan(action, net_id, nodes)` |
-| `guide_leds` | none | `guide_leds()` |
+| `guide_leds` | optional `action`, `name`, `nodes` (as `plan_net_change`; give them together) | `guide_leds()` or `guide_leds(action, net_id=name, nodes)` |
 | `all_open` | none | `all_open()` |
 | `get_state` | none | `query()` |
 
@@ -85,8 +85,11 @@ still fail at the device, and a plan is never evidence of connectivity.
 
 ## LED guidance and all-open
 
-`guide_leds` colors the Clip LEDs from the **confirmed** netlist (no plan input) with
-one `LED BATCH`. It always sends all 16 clips: clips in a net get that net's palette
+`guide_leds` colors the Clip LEDs with one `LED BATCH`. With no arguments it uses the
+**confirmed** netlist (`led.source="confirmed"`); with `action`/`name`/`nodes` it uses the
+candidate netlist that `plan_net_change` would produce (`led.source="plan"`), so the
+planned nodes can be lit before executing. The change is not applied and the confirmed
+state is unchanged; routing/validation errors match `plan_net_change`. It always sends all 16 clips: clips in a net get that net's palette
 color, every other clip is sent `000000`, so stale guidance is cleared and `n` is always
 16 (an empty netlist blanks all LEDs). The result carries `led={count, clips}`. It does
 no switch change. If the device is not ARMED, the device's `SAFE_MODE` error is returned

@@ -482,9 +482,9 @@ class AgentToolTests(unittest.TestCase):
             self.assertEqual(definition["name"], name)
             self.assertEqual(definition["description"], TOOL_DESCRIPTIONS[name])
             schema = definition["inputSchema"]
-            if name == "plan_net_change":
-                continue  # covered in test_plan.py
-            expected = [] if name in {"get_state", "guide_leds", "all_open"} else ["name"]
+            if name in {"plan_net_change", "guide_leds"}:
+                continue  # covered in test_plan.py / test_guide_all_open.py
+            expected = [] if name in {"get_state", "all_open"} else ["name"]
             if name in {"create_net", "modify_net"}:
                 expected.append("nodes")
                 self.assertEqual(schema["properties"]["nodes"]["type"], "array")

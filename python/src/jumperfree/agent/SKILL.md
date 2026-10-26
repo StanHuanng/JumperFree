@@ -24,8 +24,9 @@ crosspoints, pins or switches; the router and controller do. Tool reference:
 1. **Plan**: `plan_net_change` (action create/modify/delete). Read-only, no device I/O.
 2. **Show** the user each Net and its nodes (and break/make counts, disturbed nets).
    Wait for explicit confirmation.
-3. **Guide**: `guide_leds` lights the confirmed nets' Clips. It reflects the *current
-   confirmed* netlist, so it only helps after nets exist; see "LED timing" below.
+3. **Guide**: `guide_leds` with the *same* `action`/`name`/`nodes` as the confirmed plan
+   lights the Clips of the netlist that change would produce, before anything is
+   executed (no switch change; see "LED timing" below).
 4. Wait for the user to confirm the parts are installed.
 5. **Execute**: `create_net` / `modify_net` / `delete_net` with the same arguments that
    were planned and confirmed.
@@ -35,9 +36,10 @@ Changing a net: re-plan with `modify_net`'s arguments, show, confirm again. Neve
 `modify_net` / `delete_net` directly without a fresh confirmed plan.
 `all_open` is the user's "disconnect everything": call it when asked.
 
-LED timing: `guide_leds` has no plan input; it colors the confirmed netlist. For a new
-net, the LEDs for the planned nodes are therefore only available after execution. Tell
-the user this plainly; do not claim the LEDs preview an unexecuted plan.
+LED timing: `guide_leds` with plan arguments previews the planned netlist (all 16 clips
+are sent; others go dark) without applying it; with no arguments it colors the confirmed
+netlist. The LEDs are guidance only, never evidence of connectivity. If the device is
+not ARMED the `SAFE_MODE` error is returned; do not arm or reconnect.
 
 ## Stop conditions
 

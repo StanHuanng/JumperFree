@@ -37,6 +37,51 @@ class GuideLedsTests(unittest.TestCase):
             expected[clip] = GUIDE_PALETTE[1]
         self.assertEqual(self.dev.leds, expected)
 
+    def test_plan_input_lights_candidate_without_applying(self):
+        create_net(self.session, "A", ["Clip1", "Clip8"])
+        epoch, crc = self.dev.epoch, self.dev.shadow.shadow_crc()
+        start = len(self.dev.writes)
+        result = guide_leds(self.session, "create", "B", ["Clip2", "Clip9"])
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["led"]["source"], "plan")
+        self.assertEqual(result["led"]["count"], 16)
+        self.assertEqual([w for w in self.dev.writes[start:] if b"LED BATCH" not in w], [])
+        expected = [(0, 0, 0)] * 16
+        for clip in (1, 8):
+            expected[clip] = GUIDE_PALETTE[0]
+        for clip in (2, 9):
+            expected[clip] = GUIDE_PALETTE[1]
+        self.assertEqual(self.dev.leds, expected)
+        self.assertEqual((self.dev.epoch, self.dev.shadow.shadow_crc()), (epoch, crc))
+        self.assertEqual(set(self.nets()), {"A"})  # confirmed state untouched
+        self.assertEqual(guide_leds(self.session)["led"]["source"], "confirmed")
+
+    def test_plan_input_delete_and_errors(self):
+        create_net(self.session, "A", ["Clip1", "Clip8"])
+        self.assertTrue(guide_leds(self.session, "delete", "A")["ok"])
+        self.assertEqual(self.dev.leds, [(0, 0, 0)] * 16)
+        self.dev.leds[3] = (7, 7, 7)
+        start = len(self.dev.writes)
+        for args in (("create", "B", ["Clip1", "Clip9"]), ("create", "B", ["Nope", "Clip9"]),
+                     ("bogus", "B", None), (None, "B", ["Clip2", "Clip9"]), ("create", " ", None),
+                     ("create", "B", None)):
+            with self.subTest(args=args):
+                result = guide_leds(self.session, *args)
+                self.assertFalse(result["ok"])
+        self.assertEqual(self.dev.writes[start:], [])
+        self.assertEqual(self.dev.leds[3], (7, 7, 7))
+
+    def test_plan_input_safe_mode_passes_through(self):
+        self.dev.fault("hw")
+        result = guide_leds(self.session, "create", "B", ["Clip2", "Clip9"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["details"]["device_code"], "SAFE_MODE")
+        self.assertEqual(self.dev.state, "SAFE")
+
+    def nets(self):
+        return {n["net"]: n for n in get_state(self.session)["netlist"]["nets"]}
+
     def test_empty_netlist_blanks_all_leds(self):
         self.dev.leds[3] = (1, 2, 3)
         self.assertTrue(guide_leds(self.session)["ok"])

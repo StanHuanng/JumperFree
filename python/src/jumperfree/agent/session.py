@@ -63,6 +63,17 @@ class AgentSession:
             return ControlResult(False, operation, error=HostError(
                 "SESSION_CLOSED", "agent session is closed",
             ), device=self._device_label).as_dict()
+        if operation == "guide_leds" and args:
+            action, name, nodes = args
+            if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
+                return ControlResult(False, operation, error=HostError(
+                    "BAD_ARG", "action must be create, modify or delete"),
+                    device=self._device_label).as_dict()
+            failure = _validation_error(
+                self._device_label, operation, name, nodes, check_nodes=action in {"create", "modify"})
+            if failure is not None:
+                return failure
+            return self._control.guide_leds(action, name, nodes).as_dict()
         if operation == "plan":
             action, name, nodes = args
             if not isinstance(action, str) or action not in {"create", "modify", "delete"}:

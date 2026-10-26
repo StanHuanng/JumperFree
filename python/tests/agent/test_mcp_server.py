@@ -113,6 +113,10 @@ class ScenarioTests(ServerTestCase):
         self.assertEqual(led["led"]["count"], 16)
         self.assertEqual({i for i, c in enumerate(dev.leds) if c != (0, 0, 0)}, {0, 4, 8, 2, 11})
 
+        pre = self.call("guide_leds", action="create", name="N3", nodes=["Clip1", "Clip3"])
+        self.assertTrue(pre["ok"], pre)
+        self.assertEqual(pre["led"]["source"], "plan")
+        self.assertEqual(nets(self.call("get_state")), {"N1": n1, "N2": n2})
         self.assertTrue(self.call("plan_net_change", action="modify", name="N2",
                                   nodes=["Clip2", "Clip12"])["ok"])
         self.assertEqual(nets(self.call("get_state"))["N2"], n2)  # plan did not change it

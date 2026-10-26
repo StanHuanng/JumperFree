@@ -41,7 +41,8 @@ return `ControlResult`. `plan(action, net_id, nodes)` is a read-only dry run of 
 same routing and `compile_plan` on a copy of confirmed intent: no device I/O, no state
 change; `as_dict()` adds a `plan` key (breaks/makes counts, occupied nodes) only for it,
 and failures match the direct write, including `CONTROL_BLOCKED`.
-`guide_leds()` sends one 16-clip `LED BATCH` from confirmed intent (unused clips `000000`,
+`guide_leds([action, net_id, nodes])` sends one 16-clip `LED BATCH` from confirmed intent,
+or from the candidate a plan would produce when given plan arguments (unused clips `000000`,
 result key `led`); `all_open()` sends `SW ALLOPEN` and leaves the service permanently
 unconfirmed (`STATE_UNCONFIRMED`, `netlist=null`), refusing writes/plan/guide with
 `SESSION_REESTABLISH_REQUIRED`. See [agent tools](../agent/tools.md). IDs are strings and nodes are lists of strings. Results

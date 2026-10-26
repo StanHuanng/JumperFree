@@ -25,8 +25,10 @@ TOOL_DESCRIPTIONS = {
         "verified is always false."
     ),
     "guide_leds": (
-        "Light the Clip LEDs for the confirmed netlist with one LED BATCH: each net gets "
-        "one color, all other clips are sent black (n is always 16). Needs a confirmed "
+        "Light the Clip LEDs with one LED BATCH: each net gets one color, all other clips "
+        "are sent black (n is always 16). With no arguments it shows the confirmed netlist; "
+        "with action/name/nodes (as plan_net_change) it shows the netlist that change would "
+        "produce, before it is executed (the change itself is not applied). Needs a confirmed "
         "state and an ARMED device; SAFE_MODE is returned as is, never auto-armed. No "
         "switch change. verified is always false."
     ),
@@ -72,6 +74,14 @@ def _plan_schema() -> dict[str, object]:
     return schema
 
 
+def _guide_schema() -> dict[str, object]:
+    schema = _plan_schema()
+    schema["required"] = []  # action and name go together; a lone one is BAD_ARG/INVALID_NET_ID
+    schema["properties"]["action"] = {**schema["properties"]["action"], "description": (
+        "Optional. With name (and nodes unless delete), previews that planned change's LEDs.")}
+    return schema
+
+
 TOOL_SCHEMAS = {
     name: {"name": name, "description": TOOL_DESCRIPTIONS[name], "inputSchema": schema}
     for name, schema in (
@@ -79,7 +89,7 @@ TOOL_SCHEMAS = {
         ("modify_net", _input_schema(nodes=True)),
         ("delete_net", _input_schema()),
         ("plan_net_change", _plan_schema()),
-        ("guide_leds", _input_schema(name=False)),
+        ("guide_leds", _guide_schema()),
         ("all_open", _input_schema(name=False)),
         ("get_state", _input_schema(name=False)),
     )
@@ -112,9 +122,13 @@ def get_state(session: AgentSession) -> dict[str, object]:
     return session._invoke("query")
 
 
-def guide_leds(session: AgentSession) -> dict[str, object]:
-    """Send one LED BATCH for the confirmed netlist; no arming, no switch change."""
-    return session._invoke("guide_leds")
+def guide_leds(session: AgentSession, action: str | None = None, name: str | None = None,
+               nodes: list[str] | None = None) -> dict[str, object]:
+    """Send one LED BATCH for the confirmed netlist, or for a planned change if
+    action/name are given; no arming, no switch change."""
+    if action is None and name is None and nodes is None:
+        return session._invoke("guide_leds")
+    return session._invoke("guide_leds", action, name, nodes)
 
 
 def all_open(session: AgentSession) -> dict[str, object]:
