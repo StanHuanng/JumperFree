@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from jumperfree.host.errors import HostError
+from jumperfree.host.jf2 import commit_crc
 from jumperfree.host.jf2_session import Jf2Session
 from jumperfree.host.mock_device import MockDevice
 from jumperfree.host.transport import SerialTransport
@@ -63,7 +64,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(r.kv['epoch'],'2')
             else:
                 e=self.error('COMMIT_UNRESOLVED',s.request,['TXN','COMMIT','4','1','12345678'],n_ops=3)
-                self.assertEqual(e.details['state_changed'],'no' if state=='ABORTED' else 'unknown')
+                self.assertEqual(e.details['state_changed'],'unknown')
             self.assertEqual(t.writes,[b'JF2 TXN COMMIT 4 1 12345678\n',b'JF2 TXN QUERY 4\n'])
             self.assertGreaterEqual(clock.now,1.015)
         for response in [[],[b'JF2 ERR HW_FAULT failed\n'],OSError('lost')]:
@@ -74,6 +75,51 @@ class SessionTests(unittest.TestCase):
         clock=Clock();t=Scripted(clock,[[],[b'JF2 OK TXN QUERY 4 result=COMMITTED\n']])
         self.error('COMMIT_UNRESOLVED',Jf2Session(t,clock=clock,retries=0).request,
                    ['TXN','COMMIT','4','0','00000000'],n_ops=0)
+
+    def test_aborted_recovery_can_follow_all_open_from_existing_connections(self):
+        for cause in ('interrupt', 'lease', 'hw'):
+            with self.subTest(cause=cause):
+                clock = Clock()
+                device = MockDevice(clock=lambda: 0)
+
+                class LostReply:
+                    def reset_input(self):
+                        device.reset_input()
+
+                    def write(self, data):
+                        if data.startswith(b'JF2 TXN COMMIT 2 '):
+                            if cause == 'lease':
+                                device.advance_ms(10)
+                            elif cause == 'hw':
+                                device.fault('hw')
+                            device.write(data)
+                            device.readline()
+                            return len(data)
+                        return device.write(data)
+
+                    def readline(self):
+                        clock.now += .01
+                        return device.readline()
+
+                session = Jf2Session(LostReply(), clock=clock, retries=0)
+                session.request(['HELLO', '2', 'a'])
+                session.request(['TXN', 'BEGIN', '1', '0', '1'])
+                session.request(['TXN', 'ADD', '1', '0', '+0:0:0@1'])
+                crc = f'{commit_crc(["+0:0:0@1"]):08x}'
+                session.request(['TXN', 'COMMIT', '1', '1', crc])
+                self.assertNotEqual(device.shadow.closed, (0, 0))
+                session.request(['LEASE', '10'])
+                session.request(['TXN', 'BEGIN', '2', '1', '0'])
+                if cause == 'interrupt':
+                    device.interrupt_next_commit()
+
+                error = self.error('COMMIT_UNRESOLVED', session.request,
+                                   ['TXN', 'COMMIT', '2', '0', '00000000'])
+                self.assertEqual(error.details, {'state_changed': 'unknown', 'result': 'ABORTED'})
+                self.assertEqual((device.shadow.closed, device.epoch, device.state),
+                                 ((0, 0), 2, 'SAFE'))
+                self.assertEqual(session._ops, {})
+                self.assertEqual(device.writes.count(b'JF2 TXN COMMIT 2 0 00000000\n'), 1)
 
     def test_errors_close_and_optional_transport_features(self):
         for kw in [{'frame_timeout':0},{'frame_timeout':float('nan')},{'frame_timeout':True},

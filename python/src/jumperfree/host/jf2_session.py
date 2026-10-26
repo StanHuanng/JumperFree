@@ -138,7 +138,7 @@ class Jf2Session:
         if state == "ABORTED":
             self._ops.pop(txn_id, None)
         raise HostError("COMMIT_UNRESOLVED", "COMMIT result is " + str(state),
-                        state_changed="no" if state == "ABORTED" else "unknown", result=state)
+                        state_changed="unknown", result=state)
 
     def close(self) -> None:
         with self._lock:

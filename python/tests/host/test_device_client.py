@@ -208,7 +208,7 @@ class DeviceClientTests(unittest.TestCase):
         self.device.filter_reply = lambda request, reply: b"" if request.startswith(b"JF2 TXN COMMIT") else reply
         result = self.client.apply(self.plan)
         self.assert_error(result, "unresolved", "COMMIT_UNRESOLVED")
-        self.assertEqual(result.error.details, {"state_changed": "no", "result": "ABORTED"})
+        self.assertEqual(result.error.details, {"state_changed": "unknown", "result": "ABORTED"})
         self.assertEqual((self.device.state, self.device.epoch, self.device.shadow), ("SAFE", 1, Shadow()))
         writes = list(self.device.writes)
         self.assert_error(self.client.apply(self.plan), "unresolved", "COMMIT_UNRESOLVED")
