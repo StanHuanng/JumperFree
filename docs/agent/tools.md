@@ -6,9 +6,18 @@ The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
 call in a conversation. State lives only in memory and is lost at process exit;
 new sessions start empty. Close explicitly in `finally` or use `with`.
 
+## Session factory
+
+`open_session("mock")` returns a `MockAgentSession` (fresh `MockDevice`).
+`open_session("serial", port, baudrate=None, timeout=None)` wraps the existing
+`SerialTransport` in an `AgentSession`; pyserial stays optional and is imported
+only on this path (missing → `SERIAL_UNAVAILABLE`; mock is unaffected). Tests
+inject a fake transport via `serial_factory`. A serial session requires an
+initially empty device. All results are software/Mock-level evidence only.
+
 ## Interface
 
-Import `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`, `plan_net_change`,
+Import `open_session`, `AgentSession`, `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`, `plan_net_change`,
 `guide_leds`, `all_open`, `TOOL_SCHEMAS`, and `TOOL_DESCRIPTIONS` from `jumperfree.agent`.
 The Python functions take the session as their first argument. Bind it once so
 the registered tools have these user-facing arguments:
@@ -37,7 +46,7 @@ Every tool returns a JSON-serializable dictionary using
 
 - `ok`, `operation` (`create`, `modify`, `delete`, or `query`);
 - `netlist`, `router`, `error`, `apply`;
-- `device="MockDevice"`, `verified=false`.
+- `device`: `"MockDevice"` for mock sessions, `"serial:<port>"` for serial sessions; `verified=false` always.
 
 Successful `netlist` contains confirmed session intent. Every failure has
 `netlist=null`. A write's `router` is a candidate, and a query's `router` is
@@ -131,7 +140,7 @@ try:
         print(result)
     # The query retains A=[Clip1, Clip10], B=[Clip2, Clip9].
     # The final delete retains only A=[Clip1, Clip10].
-    # Every result has device="MockDevice", verified=False.
+    # Every result has device="MockDevice" (mock session), verified=False.
 finally:
     session.close()
 ```
