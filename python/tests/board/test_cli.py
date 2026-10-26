@@ -74,9 +74,10 @@ class PlanCliTests(unittest.TestCase):
             self.assertEqual(data['error']['code'], 'BOARD_INVALID')
             empty = crossbar_init_state(BoardProfile.load().topology)
             path.write_text(json.dumps(empty))
-            code, _, data = self.invoke(['--new', str(path), '--base-epoch', '-1'])
-            self.assertEqual(code, 1)
-            self.assertEqual(data['error']['code'], 'BAD_ARG')
+            for epoch in ('-1', str(1 << 32)):
+                code, _, data = self.invoke(['--new', str(path), '--base-epoch', epoch])
+                self.assertEqual(code, 1)
+                self.assertEqual(data['error']['code'], 'BAD_ARG')
             code, _, data = self.invoke(['--new', str(path), '--old', str(Path(tmp)/'missing')])
             self.assertEqual(code, 1)
             self.assertEqual(data['error']['layer'], 'routing')

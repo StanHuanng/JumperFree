@@ -58,7 +58,7 @@ class SwitchPlan:
     def __post_init__(self) -> None:
         if self.schema != SCHEMA["plan"]:
             raise PlanError("BAD_ARG", "unsupported switch plan schema")
-        _uint(self.base_epoch, 1 << 64, "base_epoch")
+        _uint(self.base_epoch, 1 << 32, "base_epoch")
         _uint(self.expect_crc, 1 << 32, "expect_crc")
         object.__setattr__(self, "breaks", tuple(sorted(self.breaks, key=lambda op: op.xp)))
         object.__setattr__(self, "makes", tuple(sorted(self.makes, key=lambda op: op.xp)))
