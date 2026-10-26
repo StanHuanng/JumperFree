@@ -44,7 +44,8 @@ and a consistent post-commit STATUS/TAGS snapshot matching the expected shadow.
 memory model accepted and confirmed execution. Neither means STM32 or physical
 connectivity was verified. All results have **`verified=false`**. Other Transport
 implementations can report `device-reported-applied`; that is also unverified.
-This change supplies no hardware execution CLI or firmware implementation.
+The host CLI provides only mock switch execution; the portable firmware core is
+described in the [JF2 protocol documentation](../../protocol/jf2.md).
 
 The caller supplies the profile's board/topology identity. HELLO must report
 JF2 protocol 2, the expected board, two chips, and `sw,txn` capabilities. JF2 v0.1
@@ -67,9 +68,13 @@ after staging starts stops this client. Later apply/connect/read calls return
 the saved failure without sending commands. Jf2Session alone handles retries
 and COMMIT timeout → QUERY recovery. A recovered COMMITTED result has
 `recovered=true`; ABORTED, UNKNOWN, OPEN, or an unsuccessful recovery never
-triggers another whole-plan attempt. `state_changed` preserves session recovery
-semantics, including `no` for QUERY ABORTED; a device fault may still have opened
-connections independently.
+triggers another whole-plan attempt. QUERY ABORTED reports `state_changed=unknown`:
+lease expiry, a hardware fault, or an interrupted commit may have opened existing
+connections and advanced the epoch. Failures once staging starts also report
+`unknown`, including direct DEVICE_ERROR, timeout, and transport failures.
+COMMIT_INTERRUPTED reports `yes` because it confirms an open-all and epoch
+increment. A successful COMMIT reports `yes`, including when later confirmation
+fails. These values describe the device shadow and epoch.
 
 Use one client as the exclusive owner of its transport/session. Calls on that
 client are serialized, including multi-frame transactions. External writers and
