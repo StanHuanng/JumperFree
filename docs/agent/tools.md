@@ -1,6 +1,6 @@
 # Mock agent tools v0.1
 
-`jumperfree.agent` provides exactly five tools over one `MockAgentSession`.
+`jumperfree.agent` provides exactly seven tools over one `MockAgentSession`.
 The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
 `DeviceClient`, and creates one `ControlService`. Reuse that session for every
 call in a conversation. State lives only in memory and is lost at process exit;
@@ -9,7 +9,7 @@ new sessions start empty. Close explicitly in `finally` or use `with`.
 ## Interface
 
 Import `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`, `plan_net_change`,
-`TOOL_SCHEMAS`, and `TOOL_DESCRIPTIONS` from `jumperfree.agent`.
+`guide_leds`, `all_open`, `TOOL_SCHEMAS`, and `TOOL_DESCRIPTIONS` from `jumperfree.agent`.
 The Python functions take the session as their first argument. Bind it once so
 the registered tools have these user-facing arguments:
 
@@ -19,6 +19,8 @@ the registered tools have these user-facing arguments:
 | `modify_net` | `name: str, nodes: list[str]` | `modify(net_id=name, nodes=nodes)` |
 | `delete_net` | `name: str` | `delete(net_id=name)` |
 | `plan_net_change` | `action: "create"\|"modify"\|"delete", name: str, nodes: list[str]` (omit `nodes` for delete) | `plan(action, net_id, nodes)` |
+| `guide_leds` | none | `guide_leds()` |
+| `all_open` | none | `all_open()` |
 | `get_state` | none | `query()` |
 
 `name` is required and must contain a non-whitespace character. It is passed
@@ -70,6 +72,24 @@ blocked session cannot be planned against, because its confirmed intent is no
 longer trustworthy. An unknown `action` returns `BAD_ARG`. A successful plan only
 shows what execution would attempt from the current confirmed state; execution may
 still fail at the device, and a plan is never evidence of connectivity.
+
+## LED guidance and all-open
+
+`guide_leds` colors the Clip LEDs from the **confirmed** netlist (no plan input) with
+one `LED BATCH`. It always sends all 16 clips: clips in a net get that net's palette
+color, every other clip is sent `000000`, so stale guidance is cleared and `n` is always
+16 (an empty netlist blanks all LEDs). The result carries `led={count, clips}`. It does
+no switch change. If the device is not ARMED, the device's `SAFE_MODE` error is returned
+unchanged; the tool never sends HELLO or re-arms. It is refused with `STATE_UNCONFIRMED`
+when the state is unconfirmed, `CONTROL_BLOCKED` when blocked.
+
+`all_open` sends `SW ALLOPEN` (legal in SAFE, ARMED and STAGING). It is not a recovery
+tool. On success the device is empty and SAFE, but this layer only has the device's
+success report, so the session becomes permanently unconfirmed: `get_state` returns
+`STATE_UNCONFIRMED` with `netlist=null`, and create/modify/delete/plan/guide_leds return
+`SESSION_REESTABLISH_REQUIRED` with no device I/O. `acknowledge_unresolved` (not exposed)
+cannot lift this; build a new session (HELLO re-arms). A failed `all_open` leaves the state
+unconfirmed, and also blocks writes unless it was a device-reported error.
 
 ## Confirmation and failure behavior
 

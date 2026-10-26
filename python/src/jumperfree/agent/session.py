@@ -61,7 +61,7 @@ class MockAgentSession:
             if failure is not None:
                 return failure
             return self._control.plan(action, name, nodes).as_dict()
-        if operation != "query":
+        if operation not in {"query", "guide_leds", "all_open"}:
             failure = _validation_error(
                 operation, *args, check_nodes=operation in {"create", "modify"},
             )

@@ -7,7 +7,7 @@ import re
 import secrets
 import threading
 import time
-from typing import Callable, Literal, Protocol
+from typing import Callable, Iterable, Literal, Mapping, Protocol
 
 from ..core import JfError, SCHEMA
 from ..core.shadow import OpLike, Shadow, apply_ops, parse_bitmap_hex, shadow_crc
@@ -306,6 +306,57 @@ class DeviceClient:
                 }):
                     self._stopped, self._stopped_id, self._stopped_changed = exc, transaction_id, changed
                 return self._failure(exc, transaction_id, changed)
+
+    @staticmethod
+    def _led_tokens(updates: Mapping[int, object] | Iterable[tuple[int, object]]) -> list[str]:
+        pairs = list(updates.items() if isinstance(updates, Mapping) else updates)
+        tokens: list[str] = []
+        seen: set[int] = set()
+        for pair in pairs:
+            try:
+                clip, rgb = pair
+                valid = (type(clip) is int and 0 <= clip <= 15 and len(rgb) == 3
+                         and all(type(v) is int and 0 <= v <= 255 for v in rgb))
+            except (TypeError, ValueError):
+                valid = False
+            if not valid:
+                raise HostError("BAD_ARG", "invalid LED update; expected (clip 0..15, (r, g, b) 0..255)")
+            if clip in seen:
+                raise HostError("BAD_ARG", "duplicate LED clip", clip=clip)
+            seen.add(clip)
+            tokens.append(f"{clip}:{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}")
+        return tokens
+
+    def led_batch(self, updates: Mapping[int, object] | Iterable[tuple[int, object]]) -> int:
+        """Send one `LED BATCH n clip:rrggbb...`; return n.
+
+        Validation happens before any I/O, so invalid input changes nothing. Clips not
+        listed keep their current color. Device errors (e.g. SAFE_MODE when not ARMED)
+        raise HostError unchanged; this never arms, reconnects, or touches the stop
+        latch, since LEDs carry no switch state.
+        """
+        with self._lock:
+            if self._closed:
+                raise HostError("SESSION_CLOSED", "client is closed")
+            if self._stopped is not None:
+                raise self._stopped
+            tokens = self._led_tokens(updates)
+            self._session.request(("LED", "BATCH", str(len(tokens)), *tokens))
+            return len(tokens)
+
+    def all_open(self) -> None:
+        """Send `SW ALLOPEN`; legal in SAFE, ARMED and STAGING.
+
+        On success the device is empty and SAFE with epoch+1, and any open transaction is
+        aborted. The client forgets its status and requires connect() (a new HELLO) before
+        apply(); it does not clear the stop latch, so this is not a recovery path.
+        """
+        with self._lock:
+            if self._closed:
+                raise HostError("SESSION_CLOSED", "client is closed")
+            self._session.request(("SW", "ALLOPEN"))
+            self._initialized = False
+            self.status = None
 
     def close(self) -> None:
         with self._lock:

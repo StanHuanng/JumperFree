@@ -1,4 +1,4 @@
-"""Bind these five functions to one MockAgentSession for tool registration."""
+"""Bind these functions to one MockAgentSession for tool registration."""
 
 from __future__ import annotations
 
@@ -23,6 +23,17 @@ TOOL_DESCRIPTIONS = {
         "nodes. No device I/O; never changes netlist, epoch or device. A plan is a "
         "software result, not an applied connection. Errors match the direct tool. "
         "verified is always false."
+    ),
+    "guide_leds": (
+        "Light the Clip LEDs for the confirmed netlist with one LED BATCH: each net gets "
+        "one color, all other clips are sent black (n is always 16). Needs a confirmed "
+        "state and an ARMED device; SAFE_MODE is returned as is, never auto-armed. No "
+        "switch change. verified is always false."
+    ),
+    "all_open": (
+        "Open every switch on the device (SW ALLOPEN). Works in any device state but is "
+        "not a recovery tool: afterwards the session state is unconfirmed (netlist=null) "
+        "and all writes, plans and guides are refused until a new session is created."
     ),
     "get_state": (
         "Query session intent without device I/O. Only netlist is confirmed "
@@ -68,6 +79,8 @@ TOOL_SCHEMAS = {
         ("modify_net", _input_schema(nodes=True)),
         ("delete_net", _input_schema()),
         ("plan_net_change", _plan_schema()),
+        ("guide_leds", _input_schema(name=False)),
+        ("all_open", _input_schema(name=False)),
         ("get_state", _input_schema(name=False)),
     )
 }
@@ -97,3 +110,13 @@ def plan_net_change(session: MockAgentSession, action: str, name: str,
 def get_state(session: MockAgentSession) -> dict[str, object]:
     """Return confirmed intent or the service's unconfirmed-state error."""
     return session._invoke("query")
+
+
+def guide_leds(session: MockAgentSession) -> dict[str, object]:
+    """Send one LED BATCH for the confirmed netlist; no arming, no switch change."""
+    return session._invoke("guide_leds")
+
+
+def all_open(session: MockAgentSession) -> dict[str, object]:
+    """Open all switches; leaves the session unconfirmed and write-refusing."""
+    return session._invoke("all_open")
