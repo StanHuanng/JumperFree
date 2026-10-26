@@ -9,6 +9,20 @@ from ..host.mock_device import MockDevice
 from ..service.control import ControlResult, ControlService
 
 
+def _validation_error(operation: str, name: str, nodes: list[str] | None = None,
+                      *, check_nodes: bool = False) -> dict[str, object] | None:
+    # Reuse existing error codes. Semantic node/routing checks belong to ControlService.
+    error = None
+    if not isinstance(name, str) or not name.strip():
+        error = HostError("INVALID_NET_ID", "net id must be a non-empty string")
+    elif check_nodes and (not isinstance(nodes, list)
+                          or not all(isinstance(node, str) for node in nodes)):
+        error = HostError("BAD_ARG", "nodes must be an array of strings")
+    if error is not None:
+        return ControlResult(False, operation, error=error).as_dict()
+    return None
+
+
 class MockAgentSession:
     """Single-owner, in-memory session; process exit loses all intent.
 
@@ -37,6 +51,12 @@ class MockAgentSession:
             return ControlResult(False, operation, error=HostError(
                 "SESSION_CLOSED", "agent session is closed",
             )).as_dict()
+        if operation != "query":
+            failure = _validation_error(
+                operation, *args, check_nodes=operation in {"create", "modify"},
+            )
+            if failure is not None:
+                return failure
         return getattr(self._control, operation)(*args).as_dict()
 
     def close(self) -> None:
