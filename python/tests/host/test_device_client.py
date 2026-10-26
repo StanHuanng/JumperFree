@@ -1,6 +1,7 @@
 """Session/plan behavior against the JF2 memory model, never STM32 evidence."""
 
 from dataclasses import replace
+from itertools import product
 import unittest
 
 from jumperfree.board import BoardProfile, SwitchOp, SwitchPlan, Xp, compile_plan, state_with_tags
@@ -24,10 +25,12 @@ class InterceptDevice(MockDevice):
 
     def __init__(self, clock):
         self.clock = clock
+        self.before_request = lambda request: None
         self.filter_reply = lambda request, reply: reply
         super().__init__(clock=lambda: clock.now * 1000)
 
     def _reply(self, line):
+        self.before_request(line)
         return self.filter_reply(line, super()._reply(line))
 
     def readline(self):
@@ -305,10 +308,78 @@ class DeviceClientTests(unittest.TestCase):
         result = self.client.apply(plan)
         self.assert_error(result, "device_error", "DEVICE_ERROR")
         self.assertEqual(result.error.details["device_code"], "SAFETY_SHORT")
+        self.assertEqual(result.state_changed, "unknown")
         self.assertEqual((self.device.epoch, self.device.shadow), (0, Shadow()))
         writes = list(self.device.writes)
         self.client.apply(plan)
         self.assertEqual(self.device.writes, writes)
+
+    def test_transaction_failures_can_follow_open_all_from_existing_connections(self):
+        cases = product((b"BEGIN", b"ADD", b"COMMIT"), ("lease", "hw"),
+                        ("device_error", "timeout", "transport"))
+        for command, cause, failure in cases:
+            with self.subTest(command=command, cause=cause, failure=failure):
+                clock = Clock()
+                device = InterceptDevice(clock)
+                # Configure a lease over the wire before handing ownership to the client.
+                device.write(b"JF2 HELLO 2 a\nJF2 LEASE 1000\n")
+                device.reset_input()
+                client = DeviceClient(device, topology_id=self.profile.topology_id,
+                                      clock=clock, frame_timeout=0.05, retries=0)
+                self.addCleanup(client.close)
+                client.connect()
+                self.assertTrue(client.apply(self.plan).ok)
+                self.assertNotEqual(device.shadow, Shadow())
+                remove = compile_plan(self.one, self.empty, self.profile, base_epoch=1)
+                prefix = b"JF2 TXN " + command + b" "
+
+                def fail_before_dispatch(request):
+                    if request.startswith(prefix):
+                        if cause == "lease":
+                            device.advance_ms(1000)
+                        else:
+                            device.fault("hw")
+
+                def fail_reply(request, reply):
+                    if request.startswith(prefix):
+                        if failure == "transport":
+                            raise OSError("connection lost after dispatch")
+                        if failure == "timeout":
+                            return b""
+                    return reply
+
+                device.before_request = fail_before_dispatch
+                device.filter_reply = fail_reply
+                start = len(device.writes)
+                result = client.apply(remove)
+                recovery = command == b"COMMIT" and failure == "timeout"
+                kind, code = {
+                    "device_error": ("device_error", "DEVICE_ERROR"),
+                    "timeout": ("timeout", "TIMEOUT"),
+                    "transport": ("transport", "TRANSPORT_ERROR"),
+                }[failure]
+                self.assert_error(result, "unresolved" if recovery else kind,
+                                  "COMMIT_UNRESOLVED" if recovery else code)
+                if failure == "device_error":
+                    self.assertEqual(result.error.details["device_code"], "SAFE_MODE")
+                if recovery:
+                    self.assertEqual(result.error.details["result"], "ABORTED")
+                self.assertEqual(result.state_changed, "unknown")
+                self.assertEqual((device.shadow, device.epoch, device.state),
+                                 (Shadow(), 2, "SAFE"))
+                self.assertTrue(device.faults)
+                self.assertTrue(device.writes[-1].startswith(b"JF2 TXN QUERY " if recovery else prefix))
+                self.assertEqual(sum(b"TXN COMMIT" in line for line in device.writes[start:]),
+                                 int(command == b"COMMIT"))
+                self.assertEqual(sum(b"TXN QUERY" in line for line in device.writes[start:]),
+                                 int(recovery))
+                writes = list(device.writes)
+                self.assertEqual(client.apply(remove).as_dict(), result.as_dict())
+                for operation in (client.connect, client.read_status):
+                    with self.assertRaises(HostError) as caught:
+                        operation()
+                    self.assertEqual(caught.exception.code, result.error.code)
+                self.assertEqual(device.writes, writes)
 
     def test_timeout_transport_and_postcommit_mismatch_are_explicit(self):
         for failure, kind, code in (("timeout", "timeout", "TIMEOUT"),

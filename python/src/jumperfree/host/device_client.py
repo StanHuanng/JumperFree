@@ -271,11 +271,12 @@ class DeviceClient:
                 id_ = str(transaction_id)
                 frames = self._add_frames(id_, tokens)
                 phase = "staging"
+                # Lease expiry or a fault can open all while the transaction is in flight.
+                changed = "unknown"
                 self._session.request(("TXN", "BEGIN", id_, str(plan.base_epoch), str(len(tokens))))
                 for frame in frames:
                     self._session.request(frame)
                 phase = "commit"
-                changed = "unknown"
                 committed = self._session.request(("TXN", "COMMIT", id_, str(len(frames)), f"{crc:08x}"))
                 changed = "yes"
                 phase = "confirmation"
@@ -296,9 +297,9 @@ class DeviceClient:
             except HostError as exc:
                 if self._stopped is not None:
                     return self._failure(self._stopped, self._stopped_id, self._stopped_changed)
-                if phase == "commit" and exc.code == "DEVICE_ERROR" and "state_changed" not in exc.details:
-                    # Validation ERRs do not switch. An interrupted commit explicitly opens all.
-                    changed = "yes" if exc.details.get("device_code") == "COMMIT_INTERRUPTED" else "no"
+                if (phase == "commit" and exc.code == "DEVICE_ERROR"
+                        and exc.details.get("device_code") == "COMMIT_INTERRUPTED"):
+                    changed = "yes"
                 if (phase != "precheck" or exc.code in {
                     "DEVICE_FAULT", "STATE_MISMATCH", "SHADOW_MISMATCH", "MALFORMED_RESPONSE",
                     "TIMEOUT", "TRANSPORT_ERROR", "SHORT_WRITE", "DEVICE_ERROR",
