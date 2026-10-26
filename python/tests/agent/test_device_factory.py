@@ -38,6 +38,23 @@ class DeviceFactoryTests(unittest.TestCase):
             self.assertIs(result["verified"], False)
             self.assertEqual(json.loads(json.dumps(result)), result)
 
+    def test_serial_service_result_objects_carry_label(self):
+        with open_session("serial", "COM7", serial_factory=lambda port, **kw: MockDevice()) as session:
+            ok = session._control.create("n1", ["Clip0", "Clip1"])
+            failed = session._control.create("n1", ["Clip2", "Clip3"])  # duplicate
+            query = session._control.query()
+            planned = session._control.plan("delete", "n1")
+        for result in (ok, failed, query, planned):
+            self.assertEqual(result.device, "serial:COM7")
+            self.assertEqual(result.as_dict()["device"], "serial:COM7")
+            self.assertIs(result.verified, False)
+        self.assertTrue(ok.ok)
+        self.assertFalse(failed.ok)
+
+    def test_mock_service_default_device(self):
+        with open_session("mock") as session:
+            self.assertEqual(session._control.query().device, "MockDevice")
+
     def test_closed_serial_session_keeps_label(self):
         session = open_session("serial", "/dev/ttyUSB0", serial_factory=lambda port, **kw: MockDevice())
         session.close()

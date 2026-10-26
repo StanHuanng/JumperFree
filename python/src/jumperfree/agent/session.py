@@ -12,7 +12,7 @@ from ..host.transport import SerialTransport, Transport
 from ..service.control import ControlResult, ControlService
 
 
-def _validation_error(operation: str, name: str, nodes: list[str] | None = None,
+def _validation_error(device: str, operation: str, name: str, nodes: list[str] | None = None,
                       *, check_nodes: bool = False) -> dict[str, object] | None:
     # Reuse existing error codes. Semantic node/routing checks belong to ControlService.
     error = None
@@ -22,7 +22,7 @@ def _validation_error(operation: str, name: str, nodes: list[str] | None = None,
                           or not all(isinstance(node, str) for node in nodes)):
         error = HostError("BAD_ARG", "nodes must be an array of strings")
     if error is not None:
-        return ControlResult(False, operation, error=error).as_dict()
+        return ControlResult(False, operation, error=error, device=device).as_dict()
     return None
 
 
@@ -53,34 +53,30 @@ class AgentSession:
         self._closed = False
         try:
             self._client.connect()
-            self._control = ControlService(self._client, self._profile)
+            self._control = ControlService(self._client, self._profile, self._device_label)
         except BaseException as exc:
             self._close_with_error(exc)
             raise
 
     def _invoke(self, operation: str, *args: object) -> dict[str, object]:
-        data = self._invoke_raw(operation, *args)
-        data["device"] = self._device_label
-        return data
-
-    def _invoke_raw(self, operation: str, *args: object) -> dict[str, object]:
         if self._closed:
             return ControlResult(False, operation, error=HostError(
                 "SESSION_CLOSED", "agent session is closed",
-            )).as_dict()
+            ), device=self._device_label).as_dict()
         if operation == "plan":
             action, name, nodes = args
             if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
                 return ControlResult(False, "plan", error=HostError(
-                    "BAD_ARG", "action must be create, modify or delete")).as_dict()
+                    "BAD_ARG", "action must be create, modify or delete"),
+                    device=self._device_label).as_dict()
             failure = _validation_error(
-                "plan", name, nodes, check_nodes=action in {"create", "modify"})
+                self._device_label, "plan", name, nodes, check_nodes=action in {"create", "modify"})
             if failure is not None:
                 return failure
             return self._control.plan(action, name, nodes).as_dict()
         if operation not in {"query", "guide_leds", "all_open"}:
             failure = _validation_error(
-                operation, *args, check_nodes=operation in {"create", "modify"},
+                self._device_label, operation, *args, check_nodes=operation in {"create", "modify"},
             )
             if failure is not None:
                 return failure

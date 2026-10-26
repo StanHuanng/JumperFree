@@ -24,7 +24,7 @@ class ControlResult:
     apply: ApplyResult | None = None
     plan: dict[str, Any] | None = None
     led: dict[str, Any] | None = None
-    device: str = field(default="MockDevice", init=False)
+    device: str = "MockDevice"
     verified: bool = field(default=False, init=False)
 
     def as_dict(self) -> dict[str, object]:
@@ -49,12 +49,14 @@ class ControlService:
     clears DeviceClient's stop latch; query's router field is historical only.
     """
 
-    def __init__(self, device_client: DeviceClient, board_profile: BoardProfile) -> None:
+    def __init__(self, device_client: DeviceClient, board_profile: BoardProfile,
+                 device_label: str = "MockDevice") -> None:
         initial = device_client.status
         if initial is None:
             raise HostError("NOT_INITIALIZED", "connect must succeed before creating ControlService")
         if any(initial.shadow.closed) or any(initial.shadow.tags):
             raise HostError("PLAN_STATE_MISMATCH", "ControlService requires an initially empty MockDevice")
+        self._device_label = device_label
         self._client = device_client
         self._profile = board_profile
         self._confirmed = crossbar_init_state(board_profile.topology)
@@ -62,6 +64,9 @@ class ControlService:
         self._blocked = False
         self._unconfirmed = False
         self._all_opened = False  # permanent for this service; never cleared by acknowledge
+
+    def _result(self, *args: Any, **kwargs: Any) -> ControlResult:
+        return ControlResult(*args, **kwargs, device=self._device_label)
 
     def create(self, net_id: str, nodes: list[str]) -> ControlResult:
         return self._write("create", net_id, nodes)
@@ -75,10 +80,10 @@ class ControlService:
     def query(self) -> ControlResult:
         history = copy.deepcopy(crossbar_query(self._confirmed))
         if self._blocked or self._unconfirmed:
-            return ControlResult(False, "query", router=history, error=HostError(
+            return self._result(False, "query", router=history, error=HostError(
                 "STATE_UNCONFIRMED", "only historical intent is available; device state is unconfirmed",
             ))
-        return ControlResult(True, "query", netlist=copy.deepcopy(history), router=history)
+        return self._result(True, "query", netlist=copy.deepcopy(history), router=history)
 
     def acknowledge_unresolved(self) -> None:
         """Clear only the service write gate, without confirming or recovering anything."""
@@ -96,16 +101,16 @@ class ControlService:
         if self._blocked:
             return self._blocked_result("guide_leds")
         if self._unconfirmed:
-            return ControlResult(False, "guide_leds", error=HostError(
+            return self._result(False, "guide_leds", error=HostError(
                 "STATE_UNCONFIRMED", "device state is unconfirmed; refusing to guide from stale intent"))
         try:
             frames = compile_led_plan(self._confirmed).frames
             updates = {clip: tuple(frames.get(clip, (0, 0, 0))) for clip in range(16)}
             count = self._client.led_batch(updates)
         except (JfError, HostError) as exc:
-            return ControlResult(False, "guide_leds", error=exc)
+            return self._result(False, "guide_leds", error=exc)
         led = {"count": count, "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
-        return ControlResult(True, "guide_leds", router=copy.deepcopy(crossbar_query(self._confirmed)),
+        return self._result(True, "guide_leds", router=copy.deepcopy(crossbar_query(self._confirmed)),
                              led=led)
 
     def all_open(self) -> ControlResult:
@@ -118,20 +123,20 @@ class ControlService:
             self._unconfirmed = True
             if exc.code != "DEVICE_ERROR":  # reply lost: the device may or may not be open
                 self._blocked = True
-            return ControlResult(False, "all_open", error=exc)
+            return self._result(False, "all_open", error=exc)
         self._all_opened = True
         self._unconfirmed = True
-        return ControlResult(True, "all_open")
+        return self._result(True, "all_open")
 
     def _reestablish_result(self, operation: str) -> ControlResult:
-        return ControlResult(False, operation, error=HostError(
+        return self._result(False, operation, error=HostError(
             "SESSION_REESTABLISH_REQUIRED", "all_open succeeded; build a new session (HELLO, arm) before further use",
         ))
 
     def plan(self, action: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
         """Route and compile a create/modify/delete on a copy; no device I/O, no state change."""
         if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
-            return ControlResult(False, "plan", error=HostError(
+            return self._result(False, "plan", error=HostError(
                 "BAD_ARG", "action must be create, modify or delete"))
         if self._all_opened:
             return self._reestablish_result("plan")
@@ -139,7 +144,7 @@ class ControlService:
             return self._blocked_result("plan")
         router, plan, candidate, error = self._candidate(action, net_id, nodes)
         if error is not None:
-            return ControlResult(False, "plan", router=router, error=error)
+            return self._result(False, "plan", router=router, error=error)
         occupied = sorted({node for net in router["nets"] for node in net["nodes"]})
         summary = {
             "action": action, "net": net_id, "base_epoch": plan.base_epoch,
@@ -147,10 +152,10 @@ class ControlService:
             "disturbed_nets": list(plan.disturbed_nets), "occupied_nodes": occupied,
             "occupancy": copy.deepcopy(router["occupancy"]),
         }
-        return ControlResult(True, "plan", router=router, plan=summary)
+        return self._result(True, "plan", router=router, plan=summary)
 
     def _blocked_result(self, operation: str) -> ControlResult:
-        return ControlResult(False, operation, error=HostError(
+        return self._result(False, operation, error=HostError(
             "CONTROL_BLOCKED", "acknowledge_unresolved is required before further writes",
         ))
 
@@ -176,7 +181,7 @@ class ControlService:
             return self._blocked_result(operation)
         router, plan, candidate, error = self._candidate(operation, net_id, nodes)
         if error is not None:
-            return ControlResult(False, operation, router=router, error=error)
+            return self._result(False, operation, router=router, error=error)
 
         result = self._client.apply(plan)
         if not result.ok:
@@ -185,11 +190,11 @@ class ControlService:
                 self._blocked = True
             # Even a known rejection supplies no fresh confirmation of the device.
             self._unconfirmed = True
-            return ControlResult(False, operation, router=router, error=result.error, apply=result)
+            return self._result(False, operation, router=router, error=result.error, apply=result)
 
         self._confirmed = state_with_tags(candidate, plan.tags)
         self._epoch = result.status.epoch
         self._unconfirmed = False
-        return ControlResult(True, operation,
+        return self._result(True, operation,
                              netlist=copy.deepcopy(crossbar_query(self._confirmed)),
                              router=router, apply=result)

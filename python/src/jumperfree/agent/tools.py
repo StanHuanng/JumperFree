@@ -1,22 +1,22 @@
-"""Bind these functions to one MockAgentSession for tool registration."""
+"""Bind these functions to one AgentSession for tool registration."""
 
 from __future__ import annotations
 
-from .session import MockAgentSession
+from .session import AgentSession
 
 
 TOOL_DESCRIPTIONS = {
     "create_net": (
-        "Create a named net on MockDevice. Require a nonblank name and an array "
+        "Create a named net on the session device. Require a nonblank name and an array "
         "with at least two distinct exact profile node names. Never infer, trim, "
         "replace or expand nodes. Mock results always have verified=false."
     ),
     "modify_net": (
-        "Replace the nodes of an existing named net on MockDevice, preserving "
+        "Replace the nodes of an existing named net on the session device, preserving "
         "other nets. Require a nonblank name and at least two distinct exact "
         "profile nodes. Do not guess ambiguous nodes or rewrite user intent."
     ),
-    "delete_net": "Delete only the net with this exact nonblank name on MockDevice.",
+    "delete_net": "Delete only the net with this exact nonblank name on the session device.",
     "plan_net_change": (
         "Read-only dry run of create/modify/delete on a copy of confirmed intent: "
         "routes and compiles, returns candidate router, break/make counts and occupied "
@@ -86,37 +86,37 @@ TOOL_SCHEMAS = {
 }
 
 
-def create_net(session: MockAgentSession, name: str, nodes: list[str]) -> dict[str, object]:
+def create_net(session: AgentSession, name: str, nodes: list[str]) -> dict[str, object]:
     """Create name as ControlService's net_id; do not change supplied nodes."""
     return session._invoke("create", name, nodes)
 
 
-def modify_net(session: MockAgentSession, name: str, nodes: list[str]) -> dict[str, object]:
+def modify_net(session: AgentSession, name: str, nodes: list[str]) -> dict[str, object]:
     """Replace one net through a single ControlService modify operation."""
     return session._invoke("modify", name, nodes)
 
 
-def delete_net(session: MockAgentSession, name: str) -> dict[str, object]:
+def delete_net(session: AgentSession, name: str) -> dict[str, object]:
     """Delete exactly name through ControlService."""
     return session._invoke("delete", name)
 
 
-def plan_net_change(session: MockAgentSession, action: str, name: str,
+def plan_net_change(session: AgentSession, action: str, name: str,
                     nodes: list[str] | None = None) -> dict[str, object]:
     """Dry-run create/modify/delete; nodes is required for create and modify only."""
     return session._invoke("plan", action, name, nodes)
 
 
-def get_state(session: MockAgentSession) -> dict[str, object]:
+def get_state(session: AgentSession) -> dict[str, object]:
     """Return confirmed intent or the service's unconfirmed-state error."""
     return session._invoke("query")
 
 
-def guide_leds(session: MockAgentSession) -> dict[str, object]:
+def guide_leds(session: AgentSession) -> dict[str, object]:
     """Send one LED BATCH for the confirmed netlist; no arming, no switch change."""
     return session._invoke("guide_leds")
 
 
-def all_open(session: MockAgentSession) -> dict[str, object]:
+def all_open(session: AgentSession) -> dict[str, object]:
     """Open all switches; leaves the session unconfirmed and write-refusing."""
     return session._invoke("all_open")
