@@ -40,8 +40,9 @@ Successful `netlist` contains confirmed session intent. Every failure has
 `netlist=null`. A write's `router` is a candidate, and a query's `router` is
 historical intent; neither is device confirmation. Error codes, messages,
 details and apply results from ControlService are preserved. Shape validation
-uses existing `INVALID_NET_ID` / `BAD_ARG` codes, and calls after close return
-the existing `SESSION_CLOSED` code. Connection/close failures raise the existing
+uses existing `INVALID_NET_ID` / `BAD_ARG` codes. Calls after close return
+`SESSION_CLOSED` before shape validation, including for malformed arguments.
+Connection/close failures raise the existing
 structured exceptions; they occur outside the four tool calls.
 
 ## Confirmation and failure behavior

@@ -1,6 +1,6 @@
 # 开关影子与 CRC
 
-本规范约束 Python MockDevice 与后续固件，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。
+本规范约束 Python MockDevice 与[便携 JF1/JF2 C 核心](../../firmware/README.md)，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。
 
 ## 内存值与线格式
 
@@ -16,7 +16,7 @@
 
 交叉点位号 `bit = x*8+y`。位图采用小端字节顺序：每个芯片的第 b 字节含位 8b..8b+7，最低位在前。标签索引 `k = chip*128+bit`；打包表第 `k//2` 字节中，偶数 k 放低半字节，奇数 k 放高半字节。断开点的标签由操作助手清为 0；board 校验拒绝断开点残留标签、闭合点标签为 0 或未知标签。
 
-`shadow_crc()` 为 `core.crc32(shadow_bytes(shadow))`，即无符号 zlib CRC32，覆盖完整 160 字节。摘要 CRC 为八位小写十六进制，计划 JSON 的 `expect_crc` 为整数。本 CRC 与未来事务 token 字节流的 CRC 是不同对象。
+`shadow_crc()` 为 `core.crc32(shadow_bytes(shadow))`，即无符号 zlib CRC32，覆盖完整 160 字节。摘要 CRC 为八位小写十六进制，计划 JSON 的 `expect_crc` 为整数。本 CRC 与 [JF2 事务](../../protocol/jf2.md) token 字节流的 CRC 是不同对象。
 
 `bitmap_hex(chip)` 是该芯片 16 个字节按字节顺序输出的 32 个小写十六进制字符，**不是整数的十六进制书写顺序**。`parse_bitmap_hex()` 只接受恰好 32 个小写十六进制字符，返回对应 128 位整数。
 

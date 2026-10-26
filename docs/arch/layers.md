@@ -9,6 +9,7 @@
 | `board/` | BoardProfile、SwitchPlan、compile/verify、标签与影子转换、LED 指引编译 | `core`、`routing` |
 | `host/` | JF1/JF2 编解码、Transport、HostSession、Jf2Session、DeviceClient、MockDevice | `core` |
 | `service/` | 状态文件读取、板级编译与设备会话的应用编排 | 上述各包 |
+| `agent/` | 共享 Mock 会话与四个 ControlService 工具 | `core`、`board`、`host`、`service` |
 
 同包内部可以导入；`core` 不依赖其他 JumperFree 包，`routing` 不依赖 `host`，`routing` 和
 `host` 均不得依赖 `service`、`board`。`board` 不依赖 `host`，编译与校验不执行 I/O；
@@ -17,7 +18,9 @@
 验证门禁。
 
 主要流程为 **route → plan → host**：意图先经过纯路由，再经板级编译与计划校验，最后由 host
-层会话发送 JF1/JF2 帧。当前 MockDevice 只验证软件行为，固件与真实 CH446Q 控制尚未实现。
+层会话发送 JF1/JF2 帧。[便携 JF1/JF2 C 核心](../../firmware/README.md) 已提供协议与状态实现，
+由 host 内存后端测试；当前 MockDevice 与 C 测试只验证软件行为。可烧录的 STM32 板级工程和
+真实 CH446Q 驱动尚未提供，硬件未经验证。
 
 `host guide` 的参数仍由 `host/cli.py` 定义，顶层 `jumperfree/cli.py` 将其分发给
 `service/guide.py:run_guide`。服务先读取并校验状态，调用 `board/led.py:compile_led_plan`
@@ -33,3 +36,6 @@
 它负责 JF2 会话、影子一致性检查、分帧提交和结果确认，复用 core 的 BBM 重放。
 `host device-demo --mock` 由顶层 CLI 分发至 `service/device_demo.py`，仅在服务层
 编排路由测试数据、板级编译和 MockDevice 执行。详见 [DeviceClient](../host/device-client.md)。
+
+`jumperfree.agent` 的四个工具通过共享 `MockAgentSession` 调用 ControlService，保留其确认态与
+写门禁，不调用 `acknowledge_unresolved`。接口与连续调用示例见 [Mock agent tools](../agent/tools.md)。

@@ -19,9 +19,9 @@ JumperFree 试图缩短**从软件工程到实体电路**的距离：用户主�
 
 ```text
 JumperFree/
-├── agent/           # Agent Skill
+├── agent/           # Mock Agent 工具 API 文档入口
 ├── python/          # 主机侧 Python 软件
-├── firmware/        # 软件
+├── firmware/        # 便携 JF1/JF2 C 核心与 host 内存测试
 ├── protocol/        # 规范
 ├── docs/            # 技术文档
 ├── .github/         # CI
