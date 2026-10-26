@@ -95,7 +95,8 @@ class ControlService:
 
         result = self._client.apply(plan)
         if not result.ok:
-            if result.kind in {"unresolved", "timeout", "transport"}:
+            if (result.kind in {"unresolved", "timeout", "transport"}
+                    or result.state_changed in {"yes", "unknown"}):
                 self._blocked = True
             # Even a known rejection supplies no fresh confirmation of the device.
             self._unconfirmed = True
