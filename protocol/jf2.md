@@ -1,8 +1,8 @@
 # JF2 V0.1 主机与内存设备规范
 
-本规范与 `python/src/jumperfree/host/jf2.py`、`jf2_session.py`、`mock_device.py` 和固定
-[JF2 向量](vectors/) 同步，供固件 C 实现逐字节对齐。所有开关、故障与 BBM 都只是 Python
-内存模型，**未经硬件验证**。本仓库没有固件、DeviceClient 或应用服务。影子不能证明物理通断；
+本规范与 `python/src/jumperfree/host/jf2.py`、`jf2_session.py`、`mock_device.py`、
+[固件 C core](../firmware/) 和固定 [JF2 向量](vectors/) 同步，主机与设备逐字节对齐。
+Python MockDevice 与 C host backend 的开关、故障和 BBM 均为内存模型，**未经硬件验证**。影子不能证明物理通断；
 无 ADC、探针或电流检测，不宣称过流保护。
 
 ## 帧、类型与兼容边界
@@ -121,6 +121,6 @@ SAFE 下拒绝命令不修改影子；所有校验错误均不执行开关。模
 
 每次尝试从发送前计算总 deadline；本次尝试内累积分片（空读不清空），到 LF 后只解析一次，最大 512 字节含 LF。超长行按 BAD_FRAME 丢弃，并持续丢到该行 LF 才重新同步，不能把其中形似正确回复的后缀当新帧；其他坏行同样在完整 LF 边界后恢复。重试从清输入后的空组帧状态开始；若 Transport 没有 reset_input，则跨尝试/请求保留尚未同步的状态，旧行的剩余部分必须先丢到 LF。丢弃坏行、JF1、不同 cmd、id、seq、PING/LEASE/SELFTEST 参数、CFG key、LED count 和 HELLO nonce 的回复，持续读到截止。到点包括迟到的正确回复也 TIMEOUT。ERR 帧无 cmd/id（协议本身限制），不能做关联；清输入后收到的合法 JF2 ERR 直接 DEVICE_ERROR。输出来回无流水线/异步事件。短写为 SHORT_WRITE，OSError 为 TRANSPORT_ERROR，关闭后为 SESSION_CLOSED；close 幂等。
 
-COMMIT deadline 为 `1 + 0.005*n_ops` 秒，仅发送一次；TIMEOUT 后发送 TXN QUERY（查询也按普通超时/重试）。COMMITTED 且信息完整时构造 TXN COMMIT 成功响应，保留返回字段并加 replayed=1；ABORTED 抛 COMMIT_UNRESOLVED，details.state_changed="no"；OPEN/UNKNOWN/未知状态/信息缺失抛同码，state_changed="unknown"。QUERY 自身超时、设备错误或断连也带 state_changed="unknown"，设备原码仍保留。未声称 QUERY 为 UNKNOWN 时设备一定没切换。
+COMMIT deadline 为 `1 + 0.005*n_ops` 秒，仅发送一次；TIMEOUT 后发送 TXN QUERY（查询也按普通超时/重试）。COMMITTED 且信息完整时构造 TXN COMMIT 成功响应，保留返回字段并加 replayed=1；ABORTED/OPEN/UNKNOWN/未知状态/信息缺失抛 COMMIT_UNRESOLVED，details.state_changed="unknown"。ABORTED 只确认事务已结束；提交中断、租约到期或硬件故障都可能已全断原有连接，无法据此断言影子未变。QUERY 自身超时、设备错误或断连也带 state_changed="unknown"，设备原码仍保留。
 
 MockDevice 的 Python 注入 API：`advance_ms(n)` 增加非负整数时间偏移并立即检查到期；`fault("hw")` 使源活跃、全断/epoch+1/锁存；`fault_source_gone("hw")` 只移除源，不清锁存；`reboot("por"|"iwdg"|"sw")` 清会话、输入输出、LED、影子、epoch 和历史，但保留 hw 源；`interrupt_next_commit()` 标记下一次通过校验的 COMMIT 中断。`directive(name,args)` 对接共享向量，白名单与 C harness 约定见 [向量说明](README.md)。`reset_input()` 只清待收应答，不改变设备状态或未完成请求的接收字节。
