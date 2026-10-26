@@ -120,7 +120,7 @@ class SteinerRoutingTests(unittest.TestCase):
         self.assertEqual(caught.exception.details["missing"], ["b"])
         self.assertEqual(initial, snapshot)
 
-    def test_routed_attachment_line_cannot_capture_an_unlisted_node(self) -> None:
+    def test_no_path_may_capture_an_unlisted_node(self) -> None:
         topology = {
             "chips": [{"name": "A", "x_lines": 2, "y_lines": 1}],
             "node_attachments": {
@@ -134,9 +134,49 @@ class SteinerRoutingTests(unittest.TestCase):
         snapshot = copy.deepcopy(initial)
         with self.assertRaises(RouteError) as caught:
             crossbar_create_net(initial, "n", ["a", "c"])
-        self.assertEqual(caught.exception.code, "NODES_PERMANENTLY_JOINED")
-        self.assertEqual(caught.exception.details["missing"], ["b"])
+        self.assertEqual(caught.exception.code, "NO_FREE_PATH")
         self.assertEqual(initial, snapshot)
+
+    def test_route_avoids_unlisted_nodes_when_a_free_path_exists(self) -> None:
+        topology = small_topology(chips=2, x_lines=2, y_lines=2, links_per_pair=2)
+        topology["node_attachments"]["unlisted"] = ["C1", "Y", 0]
+        initial = crossbar_init_state(topology)
+        state = crossbar_create_net(initial, "span", ["N0", "N2"])
+        self.assertEqual(state["nets"]["span"]["crosspoints"],
+                         [["C0", 0, 1], ["C1", 0, 1]])
+        self.assertEqual(initial["nets"], {})
+
+    def test_electrically_inconsistent_states_are_rejected_atomically(self) -> None:
+        topology = small_topology(chips=2, x_lines=3, y_lines=2)
+        valid = crossbar_create_net(crossbar_init_state(topology), "n", ["N0", "N1"])
+        mutations = []
+        for field, value in [
+            ("lines", []),
+            ("lines", [["C0", "X", 0], ["C0", "X", 1], ["C0", "Y", 0]]),
+            ("lines", sorted(valid["nets"]["n"]["lines"] + [["C0", "X", 2]])),
+            ("nodes", ["N0", "N2"]),
+            ("crosspoints", [["C0", 0, 0]]),
+            ("crosspoints", sorted(valid["nets"]["n"]["crosspoints"] + [["C1", 2, 1]])),
+        ]:
+            state = copy.deepcopy(valid)
+            state["nets"]["n"][field] = value
+            mutations.append(state)
+        captured = copy.deepcopy(valid)
+        captured["nets"]["n"]["lines"].insert(2, ["C0", "X", 2])
+        captured["nets"]["n"]["crosspoints"].append(["C0", 2, 0])
+        mutations.append(captured)
+        for state in mutations:
+            snapshot = copy.deepcopy(state)
+            operations = [
+                lambda: crossbar_query(state),
+                lambda: crossbar_create_net(state, "next", ["N3", "N4"]),
+                lambda: crossbar_delete_net(state, "n"),
+            ]
+            for operation in operations:
+                with self.subTest(state=state, operation=operation), self.assertRaises(RouteError) as caught:
+                    operation()
+                self.assertEqual(caught.exception.code, "INVALID_STATE")
+                self.assertEqual(state, snapshot)
 
     def test_internal_short_check_is_not_optimization_dependent(self) -> None:
         initial = crossbar_init_state(small_topology(chips=1, x_lines=2, y_lines=1))
@@ -221,6 +261,37 @@ class CrossbarCliTests(unittest.TestCase):
                 "route", "xbar", "init", "--topology-file", str(topology_file),
                 "--state", str(state),
             ])[0], 0)
+
+    def test_cli_write_failure_preserves_saved_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            self.invoke(["route", "xbar", "init", "--state", str(state)])
+            original = state.read_bytes()
+            with mock.patch("jumperfree.routing.cli.Path.replace", side_effect=OSError("disk full")):
+                code, payload = self.invoke([
+                    "route", "xbar", "create", "--net", "n", "--nodes", "N0,N1",
+                    "--state", str(state),
+                ])
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["error"]["code"], "STATE_WRITE_FAILED")
+            self.assertEqual(state.read_bytes(), original)
+            self.assertEqual(list(Path(directory).iterdir()), [state])
+
+    def test_cli_rejects_inconsistent_saved_state_without_overwriting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            self.invoke(["route", "xbar", "init", "--state", str(state)])
+            self.invoke(["route", "xbar", "create", "--net", "n", "--nodes", "N0,N1",
+                         "--state", str(state)])
+            invalid = json.loads(state.read_text(encoding="utf-8"))
+            invalid["nets"]["n"]["lines"] = []
+            state.write_text(json.dumps(invalid), encoding="utf-8")
+            original = state.read_bytes()
+            code, payload = self.invoke(["route", "xbar", "delete", "--net", "n",
+                                         "--state", str(state)])
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["error"]["code"], "INVALID_STATE")
+            self.assertEqual(state.read_bytes(), original)
 
     def test_cli_reports_topology_and_state_failures(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
