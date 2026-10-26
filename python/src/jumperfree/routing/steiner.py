@@ -27,7 +27,7 @@ def crossbar_init_state(topology: object) -> dict[str, Any]:
 
 
 def _invalid_state() -> None:
-    raise RouteError("INVALID_STATE", "crossbar routing state has an invalid shape or version")
+    raise RouteError("INVALID_STATE", "crossbar routing state has an invalid shape, version, or electrical net")
 
 
 def _line(value: object) -> LineVertex:
@@ -74,11 +74,13 @@ def _validated_state(state: object) -> tuple[dict[str, Any], ResourceGraph]:
     known_nodes = {vertex for vertex in graph.vertices if isinstance(vertex, str)}
     known_lines = set(graph.exclusive_lines)
     known_crosspoints = {_point(left, right) for left, right in graph.crosspoint_edges}
+    _, fixed = _adjacency(graph)
     seen_nodes: set[str] = set()
     seen_lines: set[LineVertex] = set()
     for net_id, net in state["nets"].items():
         if (
             not isinstance(net_id, str)
+            or not net_id.strip()
             or not isinstance(net, dict)
             or not isinstance(net.get("nodes"), list)
             or not isinstance(net.get("lines"), list)
@@ -100,6 +102,17 @@ def _validated_state(state: object) -> tuple[dict[str, Any], ResourceGraph]:
             or seen_nodes.intersection(nodes)
             or seen_lines.intersection(lines)
         ):
+            _invalid_state()
+        line_set = set(lines)
+        connected = {vertex: list(neighbors) for vertex, neighbors in fixed.items()}
+        for chip, x_line, y_line in crosspoints:
+            left, right = (chip, "X", x_line), (chip, "Y", y_line)
+            if left not in line_set or right not in line_set:
+                _invalid_state()
+            connected[left].append(right)
+            connected[right].append(left)
+        reached = _fixed_closure([nodes[0]], connected, set())
+        if reached != set(nodes) | line_set:
             _invalid_state()
         seen_nodes.update(nodes)
         seen_lines.update(lines)
@@ -268,7 +281,11 @@ def crossbar_create_net(
             owners={node: owners[node] for node in sorted(owners)},
         )
 
-    blocked = set(line_owners)
+    # A fixed component containing an unlisted node cannot carry this net.
+    unavailable = _fixed_closure(known_nodes - set(members), fixed, set())
+    blocked = set(line_owners) | {
+        vertex for vertex in unavailable if isinstance(vertex, tuple)
+    }
     tree = _fixed_closure([members[0]], fixed, blocked)
     remaining = set(members) - {vertex for vertex in tree if isinstance(vertex, str)}
     crosspoints: set[tuple[str, int, int]] = set()

@@ -186,7 +186,7 @@ class PlanTests(unittest.TestCase):
         unwired['nets']['z']['crosspoints'] = [['C1', 8, 0]]
         with self.assertRaises(JfError) as caught:
             compile_plan(self.empty, unwired, self.profile)
-        self.assertEqual(caught.exception.code, 'BAD_ARG')
+        self.assertEqual(caught.exception.code, 'INVALID_STATE')
         point = Xp(0, 0, 0)
         prof = replace(self.profile, known_bad_crosspoints=(point,))
         with self.assertRaises(PlanError) as caught:
@@ -194,9 +194,9 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'PLAN_BAD_CROSSPOINT')
         duplicate = crossbar_create_net(self.one, 'a', ['Clip1', 'Clip2'])
         duplicate['nets']['a']['crosspoints'] = copy.deepcopy(duplicate['nets']['z']['crosspoints'])
-        with self.assertRaises(PlanError) as caught:
+        with self.assertRaises(RouteError) as caught:
             shadow_from_state(duplicate, self.profile)
-        self.assertEqual(caught.exception.code, 'PLAN_VERIFY_FAILED')
+        self.assertEqual(caught.exception.code, 'INVALID_STATE')
 
     def test_too_many_ops_and_replay_failures(self):
         plan = compile_plan(self.empty, self.one, self.profile)
@@ -239,6 +239,7 @@ class PlanTests(unittest.TestCase):
         new['nets']['z']['crosspoints'].append(['C1', 1, 0])
         new['nets']['z']['crosspoints'].sort()
         new['nets']['a']['crosspoints'] = []
-        with self.assertRaises(PlanError) as caught:
-            compile_plan(self.empty, new, self.profile)
+        with patch('jumperfree.board.plan.crossbar_query'):
+            with self.assertRaises(PlanError) as caught:
+                compile_plan(self.empty, new, self.profile)
         self.assertEqual(caught.exception.code, 'PLAN_VERIFY_FAILED')

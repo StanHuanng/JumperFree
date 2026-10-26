@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -52,8 +53,20 @@ def add_route_parser(subparsers: argparse._SubParsersAction[Any]) -> argparse._S
 
 
 def _write_state(path: Path, state: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as output:
+            temporary = Path(output.name)
+            output.write(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        temporary.replace(path)
+    except OSError as exc:
+        raise RouteError("STATE_WRITE_FAILED", f"routing state could not be saved: {path}") from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _load_state(path: Path) -> dict[str, Any]:

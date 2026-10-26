@@ -11,8 +11,8 @@
 成功路由还必须通过 `find_shorts` 检查，确保不同 net 没有意外短接。
 
 调用者必须在请求中列出同一 attachment line 或同一固定接线连通分量上的全部节点。遗漏时原子地
-返回 `NODES_PERMANENTLY_JOINED`，并在 `missing` 中列出缺少的节点。路由过程中若将未列出节点的
-attachment line 纳入 net，也会以同样方式拒绝创建。
+返回 `NODES_PERMANENTLY_JOINED`，并在 `missing` 中列出缺少的节点。搜索会避开所有包含未列出节点的
+固定接线连通分量；若没有可用路径，返回 `NO_FREE_PATH`。
 
 这是贪心 Steiner 近似，不保证最少交叉点或最大总体可路由率。除非拓扑连通性等不变量能够直接
 证明不可达，`NO_FREE_PATH` 只表示当前空闲资源下未找到方案，不表示物理上不可能。
@@ -20,7 +20,9 @@ attachment line 纳入 net，也会以同样方式拒绝创建。
 ## 状态与隔离
 
 状态文件保存拓扑、每个 net 的成员节点、独占芯片线和闭合交叉点。创建与删除都是原子的：失败
-不修改输入状态，删除会一次释放该 net 的全部资源。稳定错误码包括 `NET_ALREADY_EXISTS`、
+不修改输入状态，删除会一次释放该 net 的全部资源。读取状态时校验每个 net 的电气连通性：
+成员节点、闭合交叉点及固定接线必须恰好覆盖所声明的占用线，且不能连接未声明的节点。
+不一致的状态返回 `INVALID_STATE`。稳定错误码包括 `NET_ALREADY_EXISTS`、
 `NET_TOO_SMALL`、`NODE_NOT_IN_TOPOLOGY`、`NODES_ALREADY_IN_OTHER_NET`、
 `NODES_PERMANENTLY_JOINED`、`NO_FREE_PATH` 和 `NET_NOT_FOUND`。
 
