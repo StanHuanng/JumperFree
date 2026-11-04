@@ -1,0 +1,31 @@
+{
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "PATH": "${env:LOCALAPPDATA}\\stm32cube\\bundles\\gnu-tools-for-stm32\\14.3.1+st.2\\bin;${env:LOCALAPPDATA}\\stm32cube\\bundles\\ninja\\1.13.2+st.1\\bin;${env:PATH}"
+        }
+    },
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "cube cmake --preset debug_GCC_STM32C532CCT6; if ($?) { cube cmake --build --preset debug_GCC_STM32C532CCT6 }",
+            "options": { "shell": { "executable": "pwsh", "args": ["-NoProfile", "-Command"] } },
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Flash",
+            "type": "shell",
+            "command": "cube programmer -c port=SWD freq=4000 -w build/debug_GCC_STM32C532CCT6/CH446Q_LINK.elf -v -rst",
+            "options": { "shell": { "executable": "pwsh", "args": ["-NoProfile", "-Command"] } },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build & Flash",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Build", "Flash"],
+            "problemMatcher": []
+        }
+    ]
+}
