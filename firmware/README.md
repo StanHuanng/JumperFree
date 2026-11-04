@@ -4,8 +4,10 @@ ISO C11 protocol/state implementation and a host-only memory backend, following
 [`protocol/jf2.md`](../protocol/jf2.md). No HAL, RTOS, heap allocation, VLA,
 recursion, Python runtime, zlib library, serial port or board SDK is required.
 The host tests establish protocol behavior and memory simulation behavior.
-STM32 execution and CH446Q physical switching are **unverified**. This directory
-does not contain a flashable board project or real electrical drivers.
+The core itself stays board-free. Flashable projects that bind it to a real
+CH446Q live in [`boards/`](boards/README.md): an STM32F103C8 and an
+STM32C532CCT6 build on the single-chip CH446Q test board, verified on hardware
+(2026-11-04). The two-chip v0.2 board is not covered yet.
 
 Run from the repository root with GNU make and GCC (or `CC=clang`):
 

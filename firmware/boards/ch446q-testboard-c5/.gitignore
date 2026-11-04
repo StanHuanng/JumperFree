@@ -1,0 +1,6 @@
+# ST packs copied in by a CubeMX2 export (see README): too large and under ST licences
+/stm32c5xx_drivers/
+/stm32c5xx_dfp/
+/arch/
+/build/
+/.settings/
