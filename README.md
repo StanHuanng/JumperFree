@@ -1,30 +1,34 @@
+<div align="center">
+
 # JumperFree
 
+### 给 AI Agent 用的面包板
 
-<p>
-<img src="https://img.shields.io/badge/version-1.0-34495E" alt="version 1.0">
-<img src="https://img.shields.io/badge/License-Proprietary-d97757" alt="License: Proprietary">
-</p>
+**Agent in the Hardware Loop**
 
->让 Agent 像操作和调试软件一样，辅助用户搭建真实电子电路。Agent 负责理解需求，确定性 Router 负责计算连接，STM32 控制器负责安全执行，实体硬件负责真实导通。
-> 
+<sub>让 Agent 规划接线 · 让 LED 指引你插件 · 让测量确认接对 · 然后才烧录</sub>
 
-## 为什么做 JumperFree
+</div>
 
-嵌入式开发完成代码后，往往还要手动查引脚、连接开发板和模块、核对跳线、烧录与排错。即使只是运行一个简单 Demo，也有不少重复、容易出错的接线工作。
+<br>
 
-JumperFree 试图缩短**从软件工程到实体电路**的距离：用户主要描述需要什么连接，并把器件放到指定位置；软件负责规划和路由，板上控制器负责执行。
+## 为什么做
 
-## 当前仓库结构
+Agent 已经能写出嵌入式代码，却碰不到实体电路。
 
-```text
-JumperFree/
-├── agent/           # Mock Agent 工具 API 文档入口
-├── python/          # 主机侧 Python 软件
-├── firmware/        # 便携 JF1/JF2 C 核心与 host 内存测试
-├── protocol/        # 规范
-├── docs/            # 技术文档
-├── .github/         # CI
-└── README.md
-```
- **致谢**：感谢 [JumperlessV5](https://github.com/Architeuthis-Flux/JumperlessV5) 提供的卓越灵感。
+引脚要人查，线要人插，接错了要人用万用表找，烧录和排错也要人盯着。在硬件开发的循环里，人成了 Agent 的手和眼睛。
+
+JumperFree 把 Agent 放进这个循环：
+
+1. **Agent 规划**：决定器件插在哪里。
+2. **LED 指引**：板上的 LED 告诉你每个器件插到哪个位置。
+3. **测量检查**：插好后，Agent 用检查接线。发现错误，就告诉你怎么改。
+4. **烧录与回读**：检查通过后才烧录，再实时修改烧录程序。
+
+> **Agent 负责理解和规划，确定性软件负责计算连接，硬件负责安全执行。**
+
+
+
+## 致谢
+
+感谢 [JumperlessV5](https://github.com/Architeuthis-Flux/JumperlessV5) 提供的卓越灵感。
