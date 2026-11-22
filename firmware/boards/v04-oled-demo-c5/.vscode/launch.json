@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "STM32Cube: 编译+下载+调试 (ST-Link)",
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "origin": "snippet",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "runEntry": "main",
+            "serverApID": "1",
+            "serverVerify": true,
+            "imagesAndSymbols": [
+                {
+                    "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
+                }
+            ]
+        },
+        {
+            "name": "编译+下载 (不调试，直接运行)",
+            "type": "node-terminal",
+            "request": "launch",
+            "preLaunchTask": "Build & Flash",
+            "command": "echo 下载完成，程序已复位运行"
+        }
+    ]
+}
