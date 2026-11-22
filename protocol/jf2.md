@@ -28,7 +28,7 @@ JF1 的解析、HostSession、LED 值和错误字节永久冻结，MockDevice �
 
 ## 板级 profile
 
-JumperFree mini（v0.4 板）的固件报告 `board=v04`。实现：`firmware/boards/v04-bringup-f103` 里加宽的 JF2 副本（实板运行的固件）；把它并回 C 核心的编译期 profile（`-DJF2_PROFILE_V04`）在分支 `feat/jf2-core-v04-profile`，尚未进入 main。两种 profile 的帧、命令、错误码、错误消息、事务和故障规则完全相同，只有下表的拓扑参数不同。
+C 核心（`firmware/src` + `firmware/include`）在编译期选择一个板级 profile，定义在 `firmware/include/jf2_board.h`。不加定义时为 v01；`-DJF2_PROFILE_V04` 选 v04。两种 profile 的帧、命令、错误码、错误消息、事务和故障规则完全相同，只有下表的拓扑参数不同。
 
 | 项 | board=v01（默认） | board=v04 |
 | --- | --- | --- |
@@ -53,6 +53,8 @@ JumperFree mini（v0.4 板）的固件报告 `board=v04`。实现：`firmware/bo
 - JF1 旧 LED 命令在两种 profile 下都只处理 clip 0..15，JF1 字节保持冻结。
 
 Python 主机按 HELLO 的 `board=` 选 geometry（`python/src/jumperfree/core/geometry.py`：`V01`、`V04`）。`jf2.py` 的开关 token 解析、`commit_crc`、`core/shadow.py`、`DeviceClient` 的 STATUS/TAGS 解析和 LED BATCH 范围、`MockDevice` 的应答与 SAFETY_SHORT 都按 geometry 工作；v04 应答行最长 1024 字节。共享向量仍只覆盖 v01。v04 空影子 CRC 为 `32c5f669`，与实板 `SW STATUS` 一致（2026-11-28）。
+
+C 核心的 v04 行为由 `firmware/host_test/core_tests_v04.c` 覆盖（`make -C firmware test-v04`）。
 
 ## 状态、会话、时间与故障
 

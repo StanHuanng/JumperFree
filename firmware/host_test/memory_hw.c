@@ -10,7 +10,7 @@ static void record(MemoryHw *m, MemoryEvent e)
 static void crosspoint(void *ctx, uint8_t chip, uint8_t x, uint8_t y, bool on)
 {
     MemoryHw *m=ctx;
-    assert(chip<2 && x<8 && y<8);
+    assert(chip<JF2_CHIPS && x<JF2_XN && y<JF2_YN);
     m->points[chip][x][y]=on;
     MemoryEvent e={0}; e.kind=on ? MEMORY_ON : MEMORY_OFF; e.chip=chip; e.x=x; e.y=y;
     record(m,e);
@@ -24,7 +24,7 @@ static void all_open(void *ctx)
 static void led(void *ctx, uint8_t clip, uint8_t r, uint8_t g, uint8_t b)
 {
     MemoryHw *m=ctx;
-    assert(clip<16);
+    assert(clip<JF2_CLIPS);
     m->leds[clip][0]=r; m->leds[clip][1]=g; m->leds[clip][2]=b;
     MemoryEvent e={0}; e.kind=MEMORY_LED; e.clip=clip; e.r=r; e.g=g; e.b=b;
     record(m,e);
@@ -36,7 +36,7 @@ Jf2Hw memory_hw_binding(MemoryHw *m)
 void memory_emit(void *ctx, const uint8_t *bytes, size_t len)
 {
     MemoryHw *m=ctx;
-    if (m->response_count==MEMORY_CAPTURE_CAPACITY || len>JF2_FRAME_MAX) {
+    if (m->response_count==MEMORY_CAPTURE_CAPACITY || len>JF2_TX_MAX) {
         m->response_overflow=true; return;
     }
     size_t i=m->response_count++;
@@ -63,9 +63,9 @@ void memory_reboot(MemoryHw *m, Jf2Device *d, uint32_t boot, Jf2ResetCause cause
 }
 bool memory_matches(const MemoryHw *m, const Jf2Device *d)
 {
-    for (unsigned c=0; c<2; ++c) for (unsigned x=0; x<8; ++x) for (unsigned y=0; y<8; ++y) {
+    for (unsigned c=0; c<JF2_CHIPS; ++c) for (unsigned x=0; x<JF2_XN; ++x) for (unsigned y=0; y<JF2_YN; ++y) {
         unsigned bit=x*8+y;
-        bool on=(d->live.bytes[c*16+bit/8] & (1u << (bit%8)))!=0;
+        bool on=(d->live.bytes[c*JF2_MAP_BYTES+bit/8] & (1u << (bit%8)))!=0;
         if (m->points[c][x][y]!=on) return false;
     }
     return !memcmp(m->leds,d->leds,sizeof m->leds);
