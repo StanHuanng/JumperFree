@@ -85,7 +85,7 @@ void jf2_reboot(Jf2Device *d, uint32_t boot, Jf2ResetCause cause)
     d->boot_at=d->lease_at=hw.now_ms(hw.ctx);
     d->faults=(source ? 4u : 0u) | (cause==JF2_RESET_IWDG ? 32u : 0u);
     hw.all_open(hw.ctx);
-    for (uint8_t i=0; i<16; ++i) hw.set_led(hw.ctx,i,0,0,0);
+    for (uint8_t i=0; i<JF2_CLIPS; ++i) hw.set_led(hw.ctx,i,0,0,0);
 }
 
 bool jf2_init(Jf2Device *d, const Jf2Hw *hw, Jf2Emit emit, void *ctx,
@@ -102,37 +102,52 @@ bool jf2_init(Jf2Device *d, const Jf2Hw *hw, Jf2Emit emit, void *ctx,
 
 uint8_t jf2_shadow_tag(const Jf2Shadow *s, unsigned chip, unsigned bit)
 {
-    unsigned pos=32+chip*64+bit/2;
+    unsigned pos=JF2_TAG_BASE+chip*JF2_TAG_BYTES+bit/2;
     return (uint8_t)((s->bytes[pos] >> (bit%2*4)) & 15);
 }
 
 static bool closed(const Jf2Shadow *s, unsigned chip, unsigned bit)
-{ return (s->bytes[chip*16+bit/8] & (1u << (bit%8)))!=0; }
+{ return (s->bytes[chip*JF2_MAP_BYTES+bit/8] & (1u << (bit%8)))!=0; }
 
 static void set_point(Jf2Shadow *s, const Jf2Op *op)
 {
-    unsigned bit=op->x*8u+op->y, pos=op->chip*16u+bit/8u;
+    unsigned bit=op->x*8u+op->y, pos=op->chip*JF2_MAP_BYTES+bit/8u;
     uint8_t mask=(uint8_t)(1u << (bit%8));
     if (op->tag) s->bytes[pos]|=mask; else s->bytes[pos]&=(uint8_t)~mask;
-    pos=32+op->chip*64u+bit/2;
+    pos=JF2_TAG_BASE+op->chip*JF2_TAG_BYTES+bit/2;
     unsigned shift=bit%2*4;
     s->bytes[pos]=(uint8_t)((s->bytes[pos] & ~(15u << shift)) | ((unsigned)op->tag << shift));
 }
 
+/* Canonical decimal 0..max ("0" or no leading zero) that ends at stop.
+ * Returns a pointer to stop, or NULL. */
+static const char *small_uint(const char *s, unsigned max, char stop, unsigned *v)
+{
+    if (s[0]<'0' || s[0]>'9') return NULL;
+    unsigned n=0; const char *p=s;
+    while (*p>='0' && *p<='9') { n=n*10u+(unsigned)(*p-'0'); if (n>max) return NULL; ++p; }
+    if ((p-s)>1 && s[0]=='0') return NULL;
+    if (*p!=stop) return NULL;
+    *v=n; return p;
+}
+
+/* +c:x:y@tag / -c:x:y with c < JF2_CHIPS, x < JF2_XN, y < JF2_YN, tag 1..15.
+ * v04: chip 6 (U307) only y 6 (TEST_SRC) and y 7 (SVC_GND). */
 static bool parse_op(const char *s, Jf2Op *op)
 {
-    size_t n=strlen(s);
-    if (n<6 || (s[0]!='+' && s[0]!='-') || s[1]<'0' || s[1]>'1' || s[2]!=':' ||
-        s[3]<'0' || s[3]>'7' || s[4]!=':' || s[5]<'0' || s[5]>'7') return false;
-    unsigned tag=0;
-    if (s[0]=='-') { if (n!=6) return false; }
+    unsigned c,x,y,tag=0;
+    if (s[0]!='+' && s[0]!='-') return false;
+    const char *p=small_uint(s+1,JF2_CHIPS-1u,':',&c); if (!p) return false;
+    p=small_uint(p+1,JF2_XN-1u,':',&x); if (!p) return false;
+    if (s[0]=='-') { if (!small_uint(p+1,JF2_YN-1u,'\0',&y)) return false; }
     else {
-        if ((n!=8 && n!=9) || s[6]!='@') return false;
-        if (n==8 && s[7]>='1' && s[7]<='9') tag=(unsigned)(s[7]-'0');
-        else if (n==9 && s[7]=='1' && s[8]>='0' && s[8]<='5') tag=10u+(unsigned)(s[8]-'0');
-        else return false;
+        p=small_uint(p+1,JF2_YN-1u,'@',&y); if (!p) return false;
+        if (!small_uint(p+1,15u,'\0',&tag) || tag==0) return false;
     }
-    *op=(Jf2Op){(uint8_t)(s[1]-'0'),(uint8_t)(s[3]-'0'),(uint8_t)(s[5]-'0'),(uint8_t)tag};
+#ifdef JF2_SVC_CHIP
+    if (c==JF2_SVC_CHIP && y!=JF2_SVC_Y_TEST && y!=JF2_SVC_Y_GND) return false;
+#endif
+    *op=(Jf2Op){(uint8_t)c,(uint8_t)x,(uint8_t)y,(uint8_t)tag};
     return true;
 }
 
@@ -163,8 +178,8 @@ static bool require_session(Jf2Device *d)
 
 static void info(Jf2Device *d)
 {
-    jf2_append(d,"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot=%08" PRIx32
-               " epoch=%" PRIu64 " state=%s reset=%s",d->boot,d->epoch,mode_name(d->mode),reset_name(d->reset_cause));
+    jf2_append(d,"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=%u board=" JF2_BOARD " boot=%08" PRIx32
+               " epoch=%" PRIu64 " state=%s reset=%s",JF2_CHIPS,d->boot,d->epoch,mode_name(d->mode),reset_name(d->reset_cause));
 }
 
 static void result_info(Jf2Device *d, const Jf2Result *r)
@@ -184,16 +199,28 @@ static bool valid_target(Jf2Device *d)
             set_point(&d->target,op);
         }
     }
-    uint8_t x_owner[2][8]={{0}}, y_owner[8]={0};
-    for (unsigned c=0; c<2; ++c) for (unsigned x=0; x<8; ++x) for (unsigned y=0; y<8; ++y) {
+    /* Shared lines are owned across chips, private lines per chip
+     * (v01: Y shared, X private; v04: X = BUS shared, Y = clip private). */
+#if JF2_X_SHARED
+#define X_OWNER(c,x) x_owner[0][x]
+#define Y_OWNER(c,y) y_owner[c][y]
+    uint8_t x_owner[1][JF2_XN]={{0}}, y_owner[JF2_CHIPS][JF2_YN]={{0}};
+#else
+#define X_OWNER(c,x) x_owner[c][x]
+#define Y_OWNER(c,y) y_owner[0][y]
+    uint8_t x_owner[JF2_CHIPS][JF2_XN]={{0}}, y_owner[1][JF2_YN]={{0}};
+#endif
+    for (unsigned c=0; c<JF2_CHIPS; ++c) for (unsigned x=0; x<JF2_XN; ++x) for (unsigned y=0; y<JF2_YN; ++y) {
         unsigned bit=x*8+y;
         if (closed(&d->target,c,bit)) {
             uint8_t tag=jf2_shadow_tag(&d->target,c,bit);
-            if ((x_owner[c][x] && x_owner[c][x]!=tag) || (y_owner[y] && y_owner[y]!=tag))
+            if ((X_OWNER(c,x) && X_OWNER(c,x)!=tag) || (Y_OWNER(c,y) && Y_OWNER(c,y)!=tag))
                 return jf2_error(d,"SAFETY_SHORT","line has different tags");
-            x_owner[c][x]=tag; y_owner[y]=tag;
+            X_OWNER(c,x)=tag; Y_OWNER(c,y)=tag;
         }
     }
+#undef X_OWNER
+#undef Y_OWNER
     return true;
 }
 
@@ -281,7 +308,7 @@ static bool transaction(Jf2Device *d, const Jf2Request *r)
     }
     d->live=d->target; next_epoch(d); t->open=false; d->mode=JF2_ARMED;
     Jf2Result done={0};
-    done.id=id; done.epoch=d->epoch; done.crc=jf2_crc32(d->live.bytes,160,0);
+    done.id=id; done.epoch=d->epoch; done.crc=jf2_crc32(d->live.bytes,JF2_SHADOW_BYTES,0);
     done.opened=opened; done.closed=closed_count; done.committed=true;
     remember(d,done);
     jf2_append(d,"JF2 OK TXN COMMIT %" PRIu32,id); result_info(d,&done); return true;
@@ -297,7 +324,7 @@ static bool parse_led(const char *s, unsigned *clip, uint32_t *rgb)
         if (s[1]<'0' || s[1]>'9') return false;
         c=c*10+(unsigned)(s[1]-'0');
     }
-    if (c>15 || !hex_value(s+colon+1,6,6,rgb)) return false;
+    if (c>=JF2_CLIPS || !hex_value(s+colon+1,6,6,rgb)) return false;
     *clip=c; return true;
 }
 
@@ -325,18 +352,21 @@ bool jf2_dispatch(Jf2Device *d, const Jf2Request *r)
     if (!strcmp(cmd,"SW")) {
         if (!strcmp(sub,"ALLOPEN")) { safe(d,0); jf2_append(d,"JF2 OK SW ALLOPEN"); return true; }
         if (!strcmp(sub,"STATUS")) {
-            jf2_append(d,"JF2 OK SW STATUS epoch=%" PRIu64 " crc=%08" PRIx32 " c0=",d->epoch,jf2_crc32(d->live.bytes,160,0));
-            for (unsigned i=0; i<32; ++i) {
-                if (i==16) jf2_append(d," c1=");
-                jf2_append(d,"%02x",d->live.bytes[i]);
+            jf2_append(d,"JF2 OK SW STATUS epoch=%" PRIu64 " crc=%08" PRIx32,d->epoch,jf2_crc32(d->live.bytes,JF2_SHADOW_BYTES,0));
+            for (unsigned c=0; c<JF2_CHIPS; ++c) {
+                jf2_append(d," c%u=",c);
+                for (unsigned i=0; i<JF2_MAP_BYTES; ++i) jf2_append(d,"%02x",d->live.bytes[c*JF2_MAP_BYTES+i]);
             }
             jf2_append(d," state=%s",mode_name(d->mode)); return true;
         }
         if (!strcmp(sub,"TAGS")) {
-            jf2_append(d,"JF2 OK SW TAGS t0=");
-            for (unsigned c=0; c<2; ++c) {
-                if (c) jf2_append(d," t1=");
-                for (unsigned i=0; i<32; ++i) jf2_append(d,"%02x",d->live.bytes[32+c*64+i]);
+            /* v01 keeps its historic format: only the first 32 tag bytes
+             * (x 0..7) of each chip. Other profiles print all 64. */
+            unsigned tag_out=JF2_XN*JF2_YN/2u;
+            jf2_append(d,"JF2 OK SW TAGS");
+            for (unsigned c=0; c<JF2_CHIPS; ++c) {
+                jf2_append(d," t%u=",c);
+                for (unsigned i=0; i<tag_out; ++i) jf2_append(d,"%02x",d->live.bytes[JF2_TAG_BASE+c*JF2_TAG_BYTES+i]);
             }
             return true;
         }
@@ -369,13 +399,13 @@ bool jf2_dispatch(Jf2Device *d, const Jf2Request *r)
         if (!require_session(d)) return false;
         if (d->mode==JF2_STAGING) return jf2_error(d,"BUSY","transaction open");
         (void)jf2_uint(d,jf2_token(r,2),&value);
-        if (value>16 || r->count-3!=value) return jf2_error(d,"BAD_ARG","invalid LED count");
-        unsigned mask=0, clip=0; uint32_t rgb=0;
+        if (value>JF2_CLIPS || r->count-3!=value) return jf2_error(d,"BAD_ARG","invalid LED count");
+        uint64_t mask=0; unsigned clip=0; uint32_t rgb=0;
         bool duplicate=false;
         for (size_t i=3; i<r->count; ++i) {
             if (!parse_led(jf2_token(r,i),&clip,&rgb)) return jf2_error(d,"BAD_ARG","invalid LED update");
-            if (mask & (1u << clip)) duplicate=true;
-            mask|=1u << clip;
+            if (mask & ((uint64_t)1u << clip)) duplicate=true;
+            mask|=(uint64_t)1u << clip;
         }
         if (duplicate) return jf2_error(d,"BAD_ARG","duplicate LED clip");
         for (size_t i=3; i<r->count; ++i) {

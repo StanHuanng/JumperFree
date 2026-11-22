@@ -20,6 +20,31 @@ make -C firmware CC=gcc CFLAGS='-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror' h
 make -C firmware test
 ```
 
+### Board profiles
+
+The core is compiled for one board profile, chosen in
+[`include/jf2_board.h`](include/jf2_board.h): v01 by default (2 chips, X 0..7,
+16 LEDs) or v04 with `-DJF2_PROFILE_V04` (7 chips, X = BUS 0..15 shared by all
+chips, Y = one clip per chip, chip 6 = U307 limited to y 6/7, 48 LEDs). The
+differences are listed in [`protocol/jf2.md`](../protocol/jf2.md#板级-profile).
+`make test` runs both: `test-v01` (core self-tests plus the shared vectors) and
+`test-v04` (`host_test/core_tests_v04.c`; the shared vectors are v01 only).
+The v0.4 board project
+[`boards/v04-bringup-f103`](boards/v04-bringup-f103/README.md) builds this core
+with the v04 profile.
+
+```sh
+make -C firmware test-v04
+# without make:
+mkdir -p firmware/build
+gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -DJF2_PROFILE_V04 \
+  -Ifirmware/include -Ifirmware/host_test \
+  firmware/src/jf2_protocol.c firmware/src/jf2_state.c firmware/src/jf2_crc.c \
+  firmware/host_test/memory_hw.c firmware/host_test/vector_runner.c \
+  firmware/host_test/core_tests_v04.c -o firmware/build/jf2_host_test_v04
+./firmware/build/jf2_host_test_v04 --self-test
+```
+
 `--self-test` runs core acceptance assertions and vector parser/matcher checks.
 Explicit vector paths are accepted; every file starts a fresh device at virtual
 time zero. Any syntax, response, callback-model or resource failure exits nonzero.

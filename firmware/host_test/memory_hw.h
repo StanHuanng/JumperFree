@@ -10,13 +10,13 @@ typedef struct {
     uint8_t chip, x, y, clip, r, g, b;
 } MemoryEvent;
 typedef struct {
-    bool points[2][8][8]; /* independent of core shadow and tags */
-    uint8_t leds[16][3];
+    bool points[JF2_CHIPS][JF2_XN][JF2_YN]; /* independent of core shadow and tags */
+    uint8_t leds[JF2_CLIPS][3];
     uint64_t now;
     MemoryEvent log[MEMORY_LOG_CAPACITY];
     size_t log_count;
     bool log_overflow;
-    uint8_t responses[MEMORY_CAPTURE_CAPACITY][JF2_FRAME_MAX+1u];
+    uint8_t responses[MEMORY_CAPTURE_CAPACITY][JF2_TX_MAX+1u];
     size_t response_len[MEMORY_CAPTURE_CAPACITY], response_count;
     bool response_overflow;
 } MemoryHw;

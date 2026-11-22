@@ -1,6 +1,6 @@
 # 开关影子与 CRC
 
-本规范约束 Python MockDevice 与[便携 JF1/JF2 C 核心](../../firmware/README.md)，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。
+本规范约束 Python MockDevice 与[便携 JF1/JF2 C 核心](../../firmware/README.md)，两者必须逐字节一致。CH446Q 不可回读；影子只表示软件记录，不能证明物理通断。纯格式实现位于 `jumperfree/core/shadow.py`，host 可直接导入，不依赖 board。本页按 board=v01 写；C 核心的 v04 profile 用同一布局扩展到 7 片芯片（7×16 字节位图 + 7×64 字节 tag 表 = 560 字节），见 [板级 profile](../../protocol/jf2.md#板级-profile)。
 
 ## 内存值与线格式
 
