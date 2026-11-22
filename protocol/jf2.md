@@ -17,12 +17,42 @@ JF1 的解析、HostSession、LED 值和错误字节永久冻结，MockDevice �
 
 ## 开关 token 与影子
 
+本节、命令表和冲突规则里的芯片数、坐标范围、LED 数和输出长度按 board=v01 写。board=v04 的差异见下文[板级 profile](#板级-profile)。
+
 - 通：`+c:x:y@tag`，c=0..1，x/y=0..7，tag=1..15，均为规范十进制。
 - 断：`-c:x:y`，不能带 tag；内部 SwitchOp 的 break tag=0。
 - `parse_switch_op` / `encode_switch_op` 使用冻结的 Crosspoint / SwitchOp；编码也接受具有相同属性的板级对象，不导入 board。
 - `commit_crc(tokens)` 是按帧 seq、帧内顺序拼接每个 `token + LF` 的 zlib 兼容 CRC32，返回整数。空序列为 0。
 
 复用 [影子格式](../docs/arch/shadow.md)：每芯片 128 bit，bit=x*8+y，字节序为 little-endian。CRC 输入为 chip0/chip1 各 16 字节位图，然后每芯片 128 个 tag 的 nibble 打包（偶索引为低 nibble），共 160 字节。x=8..15 保留且为零。`SW STATUS` 的 c0/c1 各为 32 hex。`SW TAGS` 仅传每芯片 **已使用的 64 个交叉点**，t0/t1 各 32 字节 / 64 hex；每字节低 nibble 仍对应偶数 bit，保留的后 64 个 tag 不传，但仍参与影子 CRC。
+
+## 板级 profile
+
+C 核心（`firmware/src` + `firmware/include`）在编译期选择一个板级 profile，定义在 `firmware/include/jf2_board.h`。不加定义时为 v01；`-DJF2_PROFILE_V04` 选 v04。两种 profile 的帧、命令、错误码、错误消息、事务和故障规则完全相同，只有下表的拓扑参数不同。
+
+| 项 | board=v01（默认） | board=v04 |
+| --- | --- | --- |
+| HELLO / INFO | `chips=2 board=v01` | `chips=7 board=v04` |
+| 芯片 c | 0..1 | 0..6：0..5 = U301..U306，6 = U307（服务芯片） |
+| X | 0..7，FLIPk，每片私有 | 0..15 = BUS0..15，所有芯片共用 |
+| Y | 0..7 = Y0..Y7 公共通道，两片共用 | 0..7，每个 Y 是一个 Clip（FLIP `8*c+y`），每片私有 |
+| 服务芯片限制 | 无 | c=6 只接受 y=6（TEST_SRC：PB8 经 1.5 kΩ，信号级约 3.3 V）和 y=7（SVC_GND）；其他 y 的通、断都返回 `BAD_ARG invalid switch operation` |
+| 冲突检查（SAFETY_SHORT） | `x_owner[(chip,x)]` + 共用的 `y_owner[y]` | 共用的 `x_owner[x]` + `y_owner[(chip,y)]` |
+| 影子 / CRC 输入 | 2×16 字节位图 + 2×64 字节 tag = 160 字节 | 7×16 字节位图 + 7×64 字节 tag = 560 字节 |
+| `SW STATUS` | `c0= c1=`，各 32 hex | `c0=` .. `c6=`，各 32 hex |
+| `SW TAGS` | `t0= t1=`，各 64 hex（只传 x 0..7 的 64 个 tag） | `t0=` .. `t6=`，各 128 hex（全部 128 个 tag）；整行 939 字节（含 LF） |
+| `LED BATCH` | n=0..16，clip=0..15 | n=0..48，clip=0..47（clip 号 = FLIP 号） |
+| 启动清 LED | 16 颗 | 48 颗 |
+| 响应缓冲 | 512 字节 | 1024 字节（请求帧仍最多 512 字节）；v04 主机必须接受最长 1024 字节的应答行 |
+
+两种 profile 都按下面的共同规则解析：
+
+- 操作 token 的每个数字都是规范十进制（`0` 或无前导零），按 profile 的上限检查。v01 的接受集合与旧的定长解析完全相同，共享向量不变。
+- 影子布局相同：每芯片 128 bit（CH446Q 的 16×8 全阵列），bit=x*8+y；先放全部芯片的位图，再放全部芯片的 tag 表。v01 的 x=8..15 保留且为零。
+- 冲突规则的含义相同：被多片芯片共用的线跨芯片检查，私有线按芯片检查。v04 中，一个 BUS 上的所有闭合点（含 U307 的 TEST_SRC / SVC_GND）必须同一个 tag；一个 Clip 接到多个 BUS 时也必须同一个 tag。
+- JF1 旧 LED 命令在两种 profile 下都只处理 clip 0..15，JF1 字节保持冻结。
+
+v04 设备只能由 C 核心实现。Python 主机（`jf2.py`、`MockDevice`、`core/shadow.py`）和共享向量目前只覆盖 v01；v04 的行为由 `firmware/host_test/core_tests_v04.c` 覆盖（`make -C firmware test-v04`）。
 
 ## 状态、会话、时间与故障
 

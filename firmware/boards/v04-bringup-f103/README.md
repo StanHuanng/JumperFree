@@ -7,7 +7,6 @@ v0.4 主板（48 Clip，前后两排各 24 列；7 片 CH446Q；48 颗 WS2812B�
 | 路径 | 内容 |
 |---|---|
 | `firmware/` | CMake + arm-none-eabi 工程，输出 `build/V04_BRINGUP.elf` |
-| `firmware/app/jf2/` | JF2 核心的 v0.4 加宽副本（见下文"与 `firmware/src` 的关系"） |
 | `firmware/flash_and_read.py` | 经 ROM USART bootloader 烧录并打印控制台 |
 | `host/v04_jf2.py` | JF2 实时建网/删网工具，`c` / `d` / `x` / `l` / `clr` |
 | `host/oled_demo.py` | 无跳线用户流程演示（配合 [`../v04-oled-demo-c5`](../v04-oled-demo-c5/README.md)） |
@@ -45,7 +44,7 @@ python flash_and_read.py COM4     # 运行中的固件收到 boot 命令后进�
 
 ## 与 `firmware/src` 的关系
 
-`firmware/app/jf2/` 是 `firmware/src` + `firmware/include` 的副本，按 v0.4 拓扑加宽：7 片芯片、X 0..15、48 个 LED、影子 480 B，SW STATUS / TAGS 按芯片数输出，操作 token 解析改为通用十进制。仓库核心目前仍是 v01（2 片、8×8）。把这些改动参数化合回 `firmware/src`、并更新 `protocol/` 和 `python/` 主机的工作还没做。
+本工程直接编译仓库的共享 JF2 核心（`firmware/src` + `firmware/include`），用编译定义 `JF2_PROFILE_V04` 选 v04 板级 profile：7 片芯片、X 0..15、48 个 LED、影子 560 B，SW STATUS / TAGS 按芯片输出，U307 只开放 y6/y7。差异表见 [`protocol/jf2.md`](../../../protocol/jf2.md#板级-profile)，host 测试为 `make -C firmware test-v04`。`python/` 主机目前仍只支持 v01。
 
 ## 硬件约束（固件已遵守）
 

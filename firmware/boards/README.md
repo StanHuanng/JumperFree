@@ -6,7 +6,7 @@
 |---|---|---|---|
 | [`ch446q-testboard-f103`](ch446q-testboard-f103/README.md) | LCKFB-DKX STM32F103C8T6 核心板 | CH446Q 测试板 + 5x5 WS2812B 灯板 | 上板实测：JF2 单点开关、Clip 建网/删网，万用表确认导通与隔离；灯板轮播显示 |
 | [`ch446q-testboard-c5`](ch446q-testboard-c5/README.md) | 律动小板 STM32C532CCT6 | CH446Q 测试板 | 上板实测：JF2 单点开关；离板用引脚回读验证 Clip 建网/删网 |
-| [`v04-bringup-f103`](v04-bringup-f103/README.md) | 板载 STM32F103C8T6 | JumperFree v0.4 主板（48 Clip、7 × CH446Q、48 × WS2812B） | 上板实测：矩阵自检 768/768、JF2 实时建网/删网；JF2 核心为 v0.4 加宽副本 |
+| [`v04-bringup-f103`](v04-bringup-f103/README.md) | 板载 STM32F103C8T6 | JumperFree v0.4 主板（48 Clip、7 × CH446Q、48 × WS2812B） | 上板实测：矩阵自检 768/768、JF2 实时建网/删网；用共享 JF2 核心的 v04 profile 构建 |
 | [`v04-oled-demo-c5`](v04-oled-demo-c5/README.md) | 律动小板 STM32C532CCT6 | 插在 v0.4 面包板上的用户电路（+ SSD1306 OLED） | 上板实测：无跳线检测插接、经矩阵连 I2C 点亮 OLED、JF 按 PA0 |
 
 ## CH446Q 测试板

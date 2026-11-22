@@ -64,8 +64,8 @@ static const char *commit(uint32_t id)
 }
 typedef struct {
     Jf2Shadow live;
-    uint8_t leds[16][3];
-    bool points[2][8][8];
+    uint8_t leds[JF2_CLIPS][3];
+    bool points[JF2_CHIPS][JF2_XN][JF2_YN];
     uint64_t epoch;
     size_t log_count;
 } Snapshot;
