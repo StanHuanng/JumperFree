@@ -852,9 +852,10 @@ void matrix_find(void)
       (unsigned long)groups, (unsigned long)(board_millis() - t0));
 }
 
-void matrix_probe_raw(void)
+void matrix_probe_raw(uint32_t settle_ms)
 {
-  probe_t p = probe();
+  /* a long settle lets module caps charge: static VCC/GND diode test */
+  probe_t p = probe_ms((settle_ms == 0U) ? SETTLE_MS : ((settle_ms > 1000U) ? 1000U : settle_ms));
   out("PA0 lo %s hi %s d %ld mV | PA5 lo %s d %ld mV\r\n",
       mv(p.lo), mv(p.hi), (long)p.d, mv(p.lo_b), (long)p.d_b);
 }

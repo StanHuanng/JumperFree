@@ -17,6 +17,7 @@
 #include "jf2_link.h"
 #include "jf2_state.h"
 #include "matrix.h"
+#include "scope.h"
 #include "ws2812.h"
 
 #define FW_NAME     "JumperFree v0.4 bring-up"
@@ -188,7 +189,9 @@ static void cmd_help(void)
       "  clr                  open every switch, LEDs off\r\n"
       "  meas <clip>          voltage on a clip (1 Mohm load)\r\n"
       "  sw <chip1-7> <x> <y> <0|1>  raw switch write\r\n"
-      "  probe                TEST_SRC low/high, show PA0/PA5\r\n"
+      "  scope <A> [B|-] [hz] [n]  capture clip A (and B) via MEAS_A/B, keeps JF2 routes\r\n"
+      "  la <clip> [f|r|a|i] [wait_ms] [win_us]  PB8 edge capture via U307 Y6, keeps JF2 routes\r\n"
+      "  probe [ms]           TEST_SRC low/high/low, settle ms (default 4), PA0/PA5\r\n"
       "  mx off               put the matrix back in reset\r\n"
       "  reset                software reset\r\n"
       "  boot                 reset into the ROM USART bootloader (flash without SW3)\r\n",
@@ -328,6 +331,50 @@ static void execute(char *line)
       matrix_conn(a, b);
     }
   }
+  else if (strcmp(cmd, "scope") == 0)
+  {
+    /* Not in touches_matrix(): JF2 routing stays, only U307 Y4/Y5 toggle */
+    uint32_t a;
+    uint32_t b = SCOPE_NONE;
+    char *s1 = strtok(NULL, " ");
+    char *s2 = strtok(NULL, " ");
+    char *s3 = strtok(NULL, " ");
+    char *s4 = strtok(NULL, " ");
+    if (!matrix_parse_clip(s1, &a) ||
+        ((s2 != NULL) && (strcmp(s2, "-") != 0) && !matrix_parse_clip(s2, &b)))
+    {
+      out("scope <clipA> [clipB|-] [rate_hz] [n]\r\n");
+    }
+    else
+    {
+      scope_run(a, b, arg_u(s3, 20000U), arg_u(s4, 0U));
+    }
+  }
+  else if ((strcmp(cmd, "la") == 0) || (strcmp(cmd, "lac") == 0))
+  {
+    /* la <clip> [f|r|a|i] [wait_ms] [win_us]; keeps JF2 routes like scope */
+    uint32_t a;
+    char *s1 = strtok(NULL, " ");
+    char *s2 = strtok(NULL, " ");
+    char *s3 = strtok(NULL, " ");
+    char *s4 = strtok(NULL, " ");
+    char t = (s2 != NULL) ? s2[0] : 'f';
+    if (!matrix_parse_clip(s1, &a) || ((t != 'f') && (t != 'r') && (t != 'a') && (t != 'i')))
+    {
+      out("la <clip> [f|r|a|i] [wait_ms] [win_us]\r\n");
+    }
+    else
+    {
+      if (cmd[2] == 'c')
+      {
+        lac_run(a, t, arg_u(s3, 1000U), arg_u(s4, 2000U));
+      }
+      else
+      {
+        la_run(a, t, arg_u(s3, 1000U), arg_u(s4, 2000U));
+      }
+    }
+  }
   else if (strcmp(cmd, "find") == 0)
   {
     matrix_find();
@@ -362,7 +409,7 @@ static void execute(char *line)
   {
     if (matrix_ready())
     {
-      matrix_probe_raw();
+      matrix_probe_raw(arg_u(strtok(NULL, " "), 0U));
     }
   }
   else if (strcmp(cmd, "mx") == 0)
