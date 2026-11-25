@@ -28,7 +28,9 @@ static uint16_t s_slots[SLOTS];
 static uint32_t s_level = WS2812_LEVEL_DEFAULT;
 static uint32_t s_current_ma;
 
-void ws2812_init(void)
+/* TIM4 + PB9 for the LED chain; also used to give TIM4 back after the
+ * PB8 input-capture probe (scope.c), the LEDs keep their latched colours */
+void ws2812_hw_setup(void)
 {
   RCC->APB1ENR |= RCC_APB1ENR_TIM4EN;
   RCC->AHBENR |= RCC_AHBENR_DMA1EN;
@@ -45,7 +47,11 @@ void ws2812_init(void)
 
   /* PB9: alternate function open-drain, 50 MHz (MODE=11, CNF=11) */
   GPIOB->CRH = (GPIOB->CRH & ~(0xFUL << 4)) | (0xFUL << 4);
+}
 
+void ws2812_init(void)
+{
+  ws2812_hw_setup();
   ws2812_fill(0U, 0U, 0U);
   ws2812_show();
 }

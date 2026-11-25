@@ -21,6 +21,7 @@ extern "C" {
 #define WS2812_LEVEL_MAX    48U   /* hard cap, see above */
 
 void ws2812_init(void);
+void ws2812_hw_setup(void);  /* TIM4/PB9 registers only, no LED update */
 void ws2812_set_level(uint32_t level);  /* clamped to 0..WS2812_LEVEL_MAX */
 uint32_t ws2812_level(void);
 void ws2812_set(uint32_t index, uint8_t r, uint8_t g, uint8_t b);  /* index 0 = RGB1 */

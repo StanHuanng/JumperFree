@@ -22,6 +22,7 @@ add_executable(V04_BRINGUP
   app/Src/ws2812.c
   app/Src/ch446q.c
   app/Src/matrix.c
+  app/Src/scope.c
   app/Src/jf2_link.c
   app/Src/main.c
   app/jf2/jf2_protocol.c

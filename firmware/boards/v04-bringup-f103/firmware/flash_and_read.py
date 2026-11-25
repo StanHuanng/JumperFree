@@ -2,6 +2,7 @@
 A running bring-up firmware (>= boot command) is asked to enter the bootloader first;
 otherwise press: hold SW3, tap SW2, release SW3."""
 import subprocess, time, os, sys, serial
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # programmer output is not GBK-safe
 PORT = sys.argv[1] if len(sys.argv) > 1 else "COM4"
 cli = os.path.expandvars(r"%LOCALAPPDATA%\stm32cube\bundles\programmer\2.23.0\bin\STM32_Programmer_CLI.exe")
 elf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build", "V04_BRINGUP.elf")

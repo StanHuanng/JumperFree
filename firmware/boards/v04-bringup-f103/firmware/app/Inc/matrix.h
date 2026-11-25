@@ -25,7 +25,7 @@ void matrix_conn(uint32_t a, uint32_t b);
 void matrix_clear(void);
 void matrix_nets(void);
 void matrix_meas(uint32_t flip);
-void matrix_probe_raw(void);
+void matrix_probe_raw(uint32_t settle_ms);  /* 0 = SETTLE_MS */
 void matrix_find(void);  /* clips joined outside the matrix, lights their LEDs */
 
 #ifdef __cplusplus
