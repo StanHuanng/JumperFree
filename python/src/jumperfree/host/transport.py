@@ -104,7 +104,13 @@ class SerialTransport:
         except OverflowError as exc:
             raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
         except (OSError, ValueError) as exc:
-            raise HostError("TRANSPORT_ERROR", str(exc), operation="open") from exc
+            text = str(exc)
+            if isinstance(exc, PermissionError) or any(
+                    key in text for key in ("PermissionError", "Access is denied", "拒绝访问", "busy")):
+                # Windows opens COM ports exclusively: another Host already owns the board.
+                raise HostError("PORT_BUSY", "serial port is already open by another program",
+                                port=port) from exc
+            raise HostError("TRANSPORT_ERROR", text, operation="open") from exc
 
     def write(self, data: bytes) -> int:
         try:
@@ -122,27 +128,31 @@ class SerialTransport:
         """JF2 请求前丢弃串口残留应答。"""
         self._serial.reset_input_buffer()
 
-    def readline_until(self, deadline: float, *, clock: Callable[[], float] = time.monotonic) -> bytes:
-        """JF2 专用：逐字节重算剩余 timeout，不延长绝对 deadline。"""
-        previous = self._serial.timeout
+    def readline_until(self, deadline: float, *, clock: Callable[[], float] = time.monotonic,
+                       max_len: int = MAX_LINE_BYTES) -> bytes:
+        """JF2 专用：轮询已到达的字节，直到 LF、超长或绝对 deadline。
+
+        不改写 pyserial 的 timeout：Windows 上每次改 timeout 都会重配串口并丢字节
+        （v0.4 实测撕裂应答）。返回值可含 LF 之后的字节，由 Jf2Session 逐行组帧。
+        """
         line = bytearray()
+        sleep = getattr(self, "_sleep", time.sleep)
         try:
-            while len(line) <= MAX_LINE_BYTES:
+            while len(line) <= max_len:
                 remaining = deadline - clock()
                 if remaining <= 0:
                     break
-                self._serial.timeout = min(previous, remaining)
-                chunk = self._serial.read(1)
-                if not chunk:
-                    break
+                waiting = self._serial.in_waiting
+                if not waiting:
+                    sleep(min(0.001, remaining))
+                    continue
+                chunk = self._serial.read(min(waiting, max_len + 1 - len(line)))
                 line.extend(chunk)
-                if chunk == b"\n":
+                if b"\n" in chunk:
                     break
             return bytes(line)
         except OverflowError as exc:
             raise HostError("INVALID_SERIAL_CONFIG", str(exc)) from exc
-        finally:
-            self._serial.timeout = previous
 
     def close(self) -> None:
         self._serial.close()

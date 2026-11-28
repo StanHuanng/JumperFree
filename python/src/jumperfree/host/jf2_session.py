@@ -14,8 +14,8 @@ from .transport import Transport
 
 class Jf2Session:
     def __init__(self, transport: Transport, *, clock: Callable[[], float] = time.monotonic,
-                 frame_timeout: float = 0.3, retries: int = 2) -> None:
-        if (not isinstance(frame_timeout, (int, float)) or isinstance(frame_timeout, bool)
+                 frame_timeout: float = 0.3, retries: int = 2, max_reply: int = 512) -> None:
+        if (type(max_reply) is not int or max_reply < 512) or (not isinstance(frame_timeout, (int, float)) or isinstance(frame_timeout, bool)
                 or not math.isfinite(frame_timeout) or frame_timeout <= 0
                 or type(retries) is not int or retries < 0):
             raise HostError("BAD_ARG", "invalid timeout or retries")
@@ -23,6 +23,7 @@ class Jf2Session:
         self.clock = clock
         self.frame_timeout = frame_timeout
         self.retries = retries
+        self.max_reply = max_reply
         self._lock = threading.Lock()
         self._closed = False
         self._ops: dict[str, int] = {}
@@ -85,7 +86,7 @@ class Jf2Session:
                 raise HostError("SHORT_WRITE", "transport did not write entire request")
             for line in self._read_lines(deadline):
                 try:
-                    response = parse_jf2_response(line)
+                    response = parse_jf2_response(line, self.max_reply)
                 except HostError as exc:
                     if exc.code == "DEVICE_ERROR":
                         raise
@@ -102,13 +103,13 @@ class Jf2Session:
         line = self._rx_line
         bounded_read = getattr(self.transport, "readline_until", None)
         while self.clock() < deadline:
-            chunk = (bounded_read(deadline, clock=self.clock) if bounded_read is not None
-                     else self.transport.readline())
+            chunk = (bounded_read(deadline, clock=self.clock, max_len=self.max_reply)
+                     if bounded_read is not None else self.transport.readline())
             expired = self.clock() >= deadline
             for value in chunk:
                 if not self._rx_discarding:
                     line.append(value)
-                    if len(line) > 512:
+                    if len(line) > self.max_reply:
                         line.clear()
                         self._rx_discarding = True
                 if value == 10:

@@ -1,64 +1,66 @@
 ---
 name: jumperfree
-description: Plan and execute breadboard net connections through the JumperFree MCP tools (Mock/software evidence only)
+description: Wire a user's parts on the JumperFree breadboard through the jumperfree MCP tools - plan nets, get the user's yes, light the clips and guide plugging, then execute. Use whenever the user wants parts connected on JumperFree (JumperFree mini).
 ---
 
 # JumperFree Skill
 
-You submit connection intent (Nets of nodes) through seven tools. You never pick
-crosspoints, pins or switches; the router and controller do. Tool reference:
-`docs/agent/tools.md`. Every result carries `verified=false`.
+You are the user's hands on a jumper-free breadboard. You submit **net intent only**: a
+net name and its nodes. The Host routes it and the board firmware closes the switches.
+You never choose crosspoints, BUS lines or switch registers.
 
-## Node naming
+## Board: JumperFree mini
 
-- Only exact, case-sensitive `Clip0` … `Clip15` are valid. `clip0`, `Clip 0`, `Clip16`,
-  `CLIP0`, `J1` are not.
-- If the user says "node 1", "1号节点" or any bare number, you cannot tell whether it means
-  `Clip0` or `Clip1`. **Ask which numbering they use. Never guess.**
-- Do not infer pins, expand, merge, trim or substitute nodes. If a name is unknown, report
-  the tool error and ask.
-- Net names: use what the user gave; if none, ask.
+- 48 clips. Each clip is one electrical node (its 6 holes are joined).
+- **Row A** = the row far from the user (back, USB side). **Row B** = the row near the
+  user (front). Columns 1..24 from the left, as the user sees the board.
+- Node names: `A1`..`A24`, `B1`..`B24`, plus service nodes `TEST_SRC` (weak 3.3 V via
+  1.5 kOhm, a pull-up only, never power) and `SVC_GND` (small-current ground).
+- Call `describe_board` first. Use only the names it returns, exactly (case-sensitive).
+  If the user says "pin 3" or "hole 5", ask which row and column. Never guess.
+- Limits: about 100 Ohm per path, at most 15 mA per switch, signals within -7 V..+5 V,
+  at most 15 nets. Power for modules goes through a clip net only for small loads
+  (sensors, small OLED). Power the board first, then the user circuit; power down in
+  reverse order.
 
-## Fixed workflow
+## Fixed order for every change
 
-1. **Plan**: `plan_net_change` (action create/modify/delete). Read-only, no device I/O.
-2. **Show** the user each Net and its nodes (and break/make counts, disturbed nets).
-   Wait for explicit confirmation.
-3. **Guide**: `guide_leds` with the *same* `action`/`name`/`nodes` as the confirmed plan
-   lights the Clips of the netlist that change would produce, before anything is
-   executed (no switch change; see "LED timing" below).
-4. Wait for the user to confirm the parts are installed.
-5. **Execute**: `create_net` / `modify_net` / `delete_net` with the same arguments that
-   were planned and confirmed.
-6. **Report** (see wording below).
+1. `plan_net_change(action, name, nodes)` - read-only. Returns `plan_id`.
+2. Show the user each net and its nodes. Wait for an explicit yes.
+3. `guide_leds(plan_id)` - the board lights the clips of the planned netlist, one color
+   per net. Then tell the user, **part by part**:
+   - which clips each pin goes to (row A/B, column), from `led.nets[].nodes[].where`;
+   - which way the part faces (pin 1 / VCC / GND side);
+   - the power order.
+   `led.added_nodes` lists the clips the user must plug now.
+4. Wait until the user says the parts are in place. Never ask "done?" without step 3.
+5. `execute_plan(plan_id)`.
+6. Report (see wording).
 
-Changing a net: re-plan with `modify_net`'s arguments, show, confirm again. Never call
-`modify_net` / `delete_net` directly without a fresh confirmed plan.
-`all_open` is the user's "disconnect everything": call it when asked.
+A plan is valid only for the state it was made in. After any change, plan again
+(`PLAN_STALE` / `PLAN_UNKNOWN`). `execute_plan` refuses a plan that was not shown
+with `guide_leds` (`PLAN_NOT_GUIDED`). To change a net, plan `modify` with the full new
+node list. `all_open` is the user's "disconnect everything"; the session continues empty.
 
-LED timing: `guide_leds` with plan arguments previews the planned netlist (all 16 clips
-are sent; others go dark) without applying it; with no arguments it colors the confirmed
-netlist. The LEDs are guidance only, never evidence of connectivity. If the device is
-not ARMED the `SAFE_MODE` error is returned; do not arm or reconnect.
+Any time the user must plug or unplug something, light the LEDs first (`guide_leds`)
+and give the clip positions in words. Text alone is not enough.
 
 ## Stop conditions
 
-- `CONTROL_BLOCKED`: stop all writes immediately. Quote the error unchanged. Do not
-  retry, clear, reconnect or attempt recovery. Wait for the user.
-- `STATE_UNCONFIRMED` / `SESSION_REESTABLISH_REQUIRED`: report as is. After `all_open`
-  the session accepts no further writes; a new session is needed.
-- `SAFE_MODE` from `guide_leds`: report; do not arm or reconnect.
-- Any other error: show code and message verbatim, do not retry, do not "fix" arguments.
+- `ok=false`: quote `error.code` and `error.message`. Do not retry with changed
+  arguments and do not "fix" node names yourself.
+- `SESSION_LOST`: the board opened every switch (lease expiry, fault, reset or the
+  emergency stop). Tell the user. Do not try to recover; the Host must be restarted.
+- `PORT_BUSY`: another program (another Agent conversation or a serial monitor) holds
+  the board. Ask the user to close it.
+- `DEVICE_NOT_FOUND`: ask the user to plug in the board's USB-C cable.
 
 ## Reporting wording
 
-Keep three layers separate:
+Keep three layers apart:
+1. Plan: "the router found a route".
+2. Execute: "the board reports the switches are set" (`execute_plan` ok).
+3. Real electrical contact: not measured by these tools. `verified=false` always.
+   Say so; never claim a circuit "works" until the user's own device confirms it.
 
-1. **Software plan result**: "the router found a candidate route" (`plan_net_change`).
-2. **Mock / controller-reported execution status**: "the Mock device reported the write
-   succeeded" (`create_net` etc., `apply`).
-3. **Real electrical connectivity**: cannot be measured. **Never claim it.**
-
-Also: `netlist=null` means state is unconfirmed, say so. `router` is a candidate or
-history, never "the current wiring". State `verified=false` in every report. Do not say
-"connected", "wired" or "verified" without the qualifier "reported by Mock/controller".
+When the Agent conversation ends, the Host turns the LEDs off and opens every switch.

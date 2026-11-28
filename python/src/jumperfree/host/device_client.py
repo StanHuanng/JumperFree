@@ -10,6 +10,7 @@ import time
 from typing import Callable, Iterable, Literal, Mapping, Protocol
 
 from ..core import JfError, SCHEMA
+from ..core.geometry import V01, Geometry
 from ..core.shadow import OpLike, Shadow, apply_ops, parse_bitmap_hex, shadow_crc
 from .errors import HostError
 from .jf2 import Jf2Response, commit_crc, encode_jf2, uint
@@ -40,7 +41,7 @@ class DeviceStatus:
 
     def as_dict(self) -> dict[str, object]:
         return {"epoch": self.epoch, "crc": f"{self.crc:08x}", "state": self.state,
-                "c0": self.shadow.bitmap_hex(0), "c1": self.shadow.bitmap_hex(1)}
+                **{f"c{c}": self.shadow.bitmap_hex(c) for c in range(self.shadow.chips)}}
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,12 +110,17 @@ class DeviceClient:
 
     def __init__(self, transport: Transport, *, topology_id: str, board_id: str = "v01",
                  max_ops: int = 256, clock: Callable[[], float] = time.monotonic,
-                 frame_timeout: float = 0.3, retries: int = 2) -> None:
+                 frame_timeout: float = 0.3, retries: int = 2, geometry: Geometry = V01) -> None:
         if (not isinstance(topology_id, str) or not topology_id
                 or not isinstance(board_id, str) or not board_id
                 or type(max_ops) is not int or not 0 <= max_ops <= 256):
             raise HostError("BAD_ARG", "expected board/topology identity and max_ops in 0..256")
-        self._session = Jf2Session(transport, clock=clock, frame_timeout=frame_timeout, retries=retries)
+        if board_id != geometry.board:
+            raise HostError("BAD_ARG", "board_id must match the JF2 geometry", board=board_id,
+                            geometry=geometry.board)
+        self._geometry = geometry
+        self._session = Jf2Session(transport, clock=clock, frame_timeout=frame_timeout, retries=retries,
+                                   max_reply=geometry.max_reply)
         self._lock = threading.Lock()
         self._board_id = board_id
         self._topology_id = topology_id
@@ -148,7 +154,8 @@ class DeviceClient:
             hello = self._session.request(("HELLO", "2", secrets.token_hex(4)))
             if hello.kv.get("proto") != "2":
                 raise HostError("PROTOCOL_MISMATCH", "device must support JF2 protocol 2")
-            if hello.kv.get("board") != self._board_id or hello.kv.get("chips") != "2":
+            if (hello.kv.get("board") != self._board_id
+                    or hello.kv.get("chips") != str(self._geometry.chips)):
                 raise HostError("BOARD_MISMATCH", "HELLO board/chip identity differs",
                                 expected=self._board_id, reported=hello.kv.get("board"))
             if not {"sw", "txn"}.issubset(hello.kv.get("caps", "").split(",")):
@@ -167,24 +174,26 @@ class DeviceClient:
     def _read_status(self) -> DeviceStatus:
         before = self._session.request(("SW", "STATUS"))
         _require_armed(before)
+        chips, sent = self._geometry.chips, self._geometry.tags_x * 8  # tags per chip in SW TAGS
         epoch, crc = _number(before, "epoch"), int(_hex(before, "crc", 8), 16)
-        closed = tuple(parse_bitmap_hex(_hex(before, f"c{chip}", 32)) for chip in range(2))
+        closed = tuple(parse_bitmap_hex(_hex(before, f"c{chip}", 32)) for chip in range(chips))
         tags_reply = self._session.request(("SW", "TAGS"))
         # TAGS carries faults but no state field.
         _require_no_fault(tags_reply)
         tags = bytearray()
-        for chip in range(2):
-            for packed in bytes.fromhex(_hex(tags_reply, f"t{chip}", 64)):
+        for chip in range(chips):
+            for packed in bytes.fromhex(_hex(tags_reply, f"t{chip}", sent)):
                 tags.extend((packed & 15, packed >> 4))
-            tags.extend(bytes(64))  # X8..15 reserved, omitted by SW TAGS.
+            tags.extend(bytes(128 - sent))  # v01: X8..15 reserved, omitted by SW TAGS.
         after = self._session.request(("SW", "STATUS"))
         _require_armed(after)
-        if any(before.kv.get(key) != after.kv.get(key) for key in ("epoch", "crc", "c0", "c1", "state")):
+        keys = ("epoch", "crc", "state", *(f"c{chip}" for chip in range(chips)))
+        if any(before.kv.get(key) != after.kv.get(key) for key in keys):
             raise HostError("STATE_MISMATCH", "shadow changed while reading status/tags")
         shadow = Shadow(closed, bytes(tags))
-        if (any(bitmap >> 64 for bitmap in closed)
+        if (any(bitmap >> sent for bitmap in closed)
                 or any(bool(closed[chip] & (1 << bit)) != bool(tags[chip * 128 + bit])
-                       for chip in range(2) for bit in range(128))
+                       for chip in range(chips) for bit in range(128))
                 or shadow_crc(shadow) != crc):
             raise HostError("SHADOW_MISMATCH", "status bitmaps/tags do not match shadow CRC")
         return DeviceStatus(epoch, crc, "ARMED", shadow)
@@ -246,7 +255,7 @@ class DeviceClient:
                 tokens = plan.to_wire_tokens()  # Preserve the board plan's BBM order.
                 if len(tokens) > self._max_ops:
                     raise HostError("PLAN_TOO_LARGE", "plan exceeds max_ops", max_ops=self._max_ops)
-                crc = commit_crc(tokens)
+                crc = commit_crc(tokens, self._geometry)
                 current = self._read_status()
                 self.status = current
                 if current.epoch != plan.base_epoch:
@@ -307,20 +316,20 @@ class DeviceClient:
                     self._stopped, self._stopped_id, self._stopped_changed = exc, transaction_id, changed
                 return self._failure(exc, transaction_id, changed)
 
-    @staticmethod
-    def _led_tokens(updates: Mapping[int, object] | Iterable[tuple[int, object]]) -> list[str]:
+    def _led_tokens(self, updates: Mapping[int, object] | Iterable[tuple[int, object]]) -> list[str]:
         pairs = list(updates.items() if isinstance(updates, Mapping) else updates)
         tokens: list[str] = []
         seen: set[int] = set()
         for pair in pairs:
             try:
                 clip, rgb = pair
-                valid = (type(clip) is int and 0 <= clip <= 15 and len(rgb) == 3
+                valid = (type(clip) is int and 0 <= clip < self._geometry.leds and len(rgb) == 3
                          and all(type(v) is int and 0 <= v <= 255 for v in rgb))
             except (TypeError, ValueError):
                 valid = False
             if not valid:
-                raise HostError("BAD_ARG", "invalid LED update; expected (clip 0..15, (r, g, b) 0..255)")
+                raise HostError("BAD_ARG", "invalid LED update; expected (clip index, (r, g, b) 0..255)",
+                                leds=self._geometry.leds)
             if clip in seen:
                 raise HostError("BAD_ARG", "duplicate LED clip", clip=clip)
             seen.add(clip)
@@ -343,6 +352,33 @@ class DeviceClient:
             tokens = self._led_tokens(updates)
             self._session.request(("LED", "BATCH", str(len(tokens)), *tokens))
             return len(tokens)
+
+    @property
+    def geometry(self) -> Geometry:
+        return self._geometry
+
+    def lease(self, ms: int) -> None:
+        """Send `LEASE ms` (0 = never expire). On expiry the firmware opens all switches."""
+        with self._lock:
+            self._ready()
+            if type(ms) is not int or not 0 <= ms <= 600000:
+                raise HostError("BAD_ARG", "lease must be 0..600000 ms")
+            _require_no_fault(self._session.request(("LEASE", str(ms))))
+
+    def ping(self, seq: int) -> tuple[int, int]:
+        """Send `PING seq`; return (uptime ms, fault mask). Never raises on a fault mask.
+
+        Takes the same lock as apply/led_batch, so a heartbeat never interleaves with a
+        transaction. Transport/timeout errors raise HostError unchanged.
+        """
+        with self._lock:
+            if self._closed:
+                raise HostError("SESSION_CLOSED", "client is closed")
+            reply = self._session.request(("PING", str(seq)))
+            fault = reply.kv.get("f", "0")
+            if not re.fullmatch(r"[0-9a-f]+", fault):
+                raise HostError("MALFORMED_RESPONSE", "invalid fault mask")
+            return _number(reply, "up"), int(fault, 16)
 
     def all_open(self) -> None:
         """Send `SW ALLOPEN`; legal in SAFE, ARMED and STAGING.

@@ -8,16 +8,17 @@ from types import MappingProxyType
 from typing import Iterable, Mapping
 
 from ..core import crc32
+from ..core.geometry import V01, Geometry
 from .errors import HostError
 
 UINT = r"(?:0|[1-9][0-9]*)"
 _MULTI = {"TXN", "SW", "LED", "FAULT", "CFG"}
 
 
-def frame_tokens(line: bytes) -> tuple[str, ...]:
-    """严格 LF、单空格、可打印 ASCII；JF2 不接受 CRLF。"""
-    if not isinstance(line, bytes) or len(line) > 512 or not line.endswith(b"\n"):
-        raise HostError("BAD_FRAME", "expected LF frame of at most 512 bytes")
+def frame_tokens(line: bytes, max_len: int = 512) -> tuple[str, ...]:
+    """严格 LF、单空格、可打印 ASCII；JF2 不接受 CRLF。请求最多 512 字节；v04 应答最多 1024。"""
+    if not isinstance(line, bytes) or len(line) > max_len or not line.endswith(b"\n"):
+        raise HostError("BAD_FRAME", f"expected LF frame of at most {max_len} bytes")
     if not re.fullmatch(rb"[!-~]+(?: [!-~]+)*\n", line):
         raise HostError("BAD_FRAME", "expected printable ASCII and single spaces")
     return tuple(line[:-1].decode("ascii").split(" "))
@@ -90,27 +91,32 @@ class SwitchOp:
     tag: int = 0
 
 
-def encode_switch_op(op: SwitchOp) -> str:
-    """支持结构兼容的板级 SwitchOp；break 的内部 tag 必须为 0。"""
-    if (any(type(v) is not int or not 0 <= v <= limit for v, limit in
-            ((op.xp.chip, 1), (op.xp.x, 7), (op.xp.y, 7), (op.tag, 15)))
+def encode_switch_op(op: SwitchOp, geometry: Geometry = V01) -> str:
+    """支持结构兼容的板级 SwitchOp；break 的内部 tag 必须为 0。坐标范围按板级 geometry。"""
+    if (any(type(v) is not int for v in (op.xp.chip, op.xp.x, op.xp.y, op.tag))
+            or not geometry.check_point(op.xp.chip, op.xp.x, op.xp.y) or not 0 <= op.tag <= 15
             or type(op.on) is not bool or (op.on and op.tag == 0) or (not op.on and op.tag != 0)):
         raise HostError("BAD_ARG", "invalid switch operation")
     return f"{'+' if op.on else '-'}{op.xp.chip}:{op.xp.x}:{op.xp.y}" + (f"@{op.tag}" if op.on else "")
 
 
-def parse_switch_op(token: str) -> SwitchOp:
-    match = re.fullmatch(r"([+-])([01]):([0-7]):([0-7])(?:@([1-9]|1[0-5]))?", token)
-    if match is None or (match[1] == "+") != (match[5] is not None):
+_OP = re.compile(r"([+-])(0|[1-9][0-9]?):(0|[1-9][0-9]?):(0|[1-9][0-9]?)(?:@([1-9]|1[0-5]))?")
+
+
+def parse_switch_op(token: str, geometry: Geometry = V01) -> SwitchOp:
+    """规范十进制；v01 的接受集合与旧定长解析相同（c 0..1、x/y 0..7）。"""
+    match = _OP.fullmatch(token) if isinstance(token, str) else None
+    if (match is None or (match[1] == "+") != (match[5] is not None)
+            or not geometry.check_point(int(match[2]), int(match[3]), int(match[4]))):
         raise HostError("BAD_ARG", "invalid switch operation")
     return SwitchOp(Crosspoint(int(match[2]), int(match[3]), int(match[4])), match[1] == "+", int(match[5] or 0))
 
 
-def commit_crc(tokens: Iterable[str]) -> int:
+def commit_crc(tokens: Iterable[str], geometry: Geometry = V01) -> int:
     """按 seq 顺序，每个操作后一个 LF，zlib 兼容 CRC32。"""
     values = tuple(tokens)
     for token in values:
-        parse_switch_op(token)
+        parse_switch_op(token, geometry)
     return crc32("".join(token + "\n" for token in values).encode("ascii"))
 
 
@@ -127,10 +133,10 @@ class Jf2Response:
         object.__setattr__(self, "kv", MappingProxyType(dict(self.kv)))
 
 
-def parse_jf2_response(line: bytes) -> Jf2Response:
+def parse_jf2_response(line: bytes, max_len: int = 512) -> Jf2Response:
     """未知 key 原样保留；设备 ERR 与 JF1 一样抛 DEVICE_ERROR。"""
     try:
-        tokens = frame_tokens(line)
+        tokens = frame_tokens(line, max_len)
         if len(tokens) < 3 or tokens[0] != "JF2":
             raise HostError("BAD_FRAME", "expected JF2 response")
         if tokens[1] == "ERR":

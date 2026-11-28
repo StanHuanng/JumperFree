@@ -1,4 +1,8 @@
-"""Normative 160-byte switch shadow shared with the future firmware model."""
+"""Normative switch shadow shared with the firmware model.
+
+v01: 2 chips, 160 bytes. v04 (JumperFree mini): 7 chips, 560 bytes. Layout per
+chip: 128-bit little-endian bitmap (bit = x*8+y); then 128 tag nibbles per chip.
+"""
 
 from __future__ import annotations
 
@@ -15,18 +19,28 @@ def _uint(value: object, limit: int, name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class Shadow:
-    """Two 128-bit integers and 256 unpacked tag values (one byte per value)."""
+    """One 128-bit integer per chip and 128 unpacked tag values per chip (one byte each)."""
 
-    closed: tuple[int, int] = (0, 0)
+    closed: tuple[int, ...] = (0, 0)
     tags: bytes = bytes(256)
 
     def __post_init__(self) -> None:
-        if type(self.closed) is not tuple or len(self.closed) != 2:
-            raise JfError("BAD_ARG", "closed must contain two 128-bit integers")
+        if type(self.closed) is not tuple or not 1 <= len(self.closed) <= 8:
+            raise JfError("BAD_ARG", "closed must contain one 128-bit integer per chip (1..8)")
         for value in self.closed:
             _uint(value, 1 << 128, "bitmap")
-        if not isinstance(self.tags, bytes) or len(self.tags) != 256 or any(t > 15 for t in self.tags):
-            raise JfError("BAD_ARG", "tags must be 256 bytes with values in 0..15")
+        if (not isinstance(self.tags, bytes) or len(self.tags) != 128 * len(self.closed)
+                or any(t > 15 for t in self.tags)):
+            raise JfError("BAD_ARG", "tags must be 128 bytes per chip with values in 0..15")
+
+    @classmethod
+    def empty(cls, chips: int = 2) -> "Shadow":
+        _uint(chips, 9, "chips")
+        return cls((0,) * chips, bytes(128 * chips))
+
+    @property
+    def chips(self) -> int:
+        return len(self.closed)
 
     def shadow_bytes(self) -> bytes:
         return shadow_bytes(self)
@@ -39,9 +53,9 @@ class Shadow:
 
 
 def shadow_bytes(shadow: Shadow) -> bytes:
-    """Chip0, chip1 little-endian bitmaps, then even-low packed tag nibbles."""
+    """Per-chip little-endian bitmaps, then even-low packed tag nibbles."""
     return b"".join(value.to_bytes(16, "little") for value in shadow.closed) + bytes(
-        shadow.tags[k] | (shadow.tags[k + 1] << 4) for k in range(0, 256, 2)
+        shadow.tags[k] | (shadow.tags[k + 1] << 4) for k in range(0, len(shadow.tags), 2)
     )
 
 
@@ -50,7 +64,7 @@ def shadow_crc(shadow: Shadow) -> int:
 
 
 def bitmap_hex(shadow: Shadow, chip: int) -> str:
-    _uint(chip, 2, "chip")
+    _uint(chip, len(shadow.closed), "chip")
     return shadow.closed[chip].to_bytes(16, "little").hex()
 
 
@@ -79,7 +93,7 @@ def apply_ops(shadow: Shadow, breaks: Iterable[OpLike] = (), makes: Iterable[OpL
     tags = bytearray(shadow.tags)
     for phase, operations in ((False, breaks), (True, makes)):
         for op in operations:
-            _uint(op.xp.chip, 2, "chip")
+            _uint(op.xp.chip, len(closed), "chip")
             _uint(op.xp.x, 16, "x")
             _uint(op.xp.y, 8, "y")
             _uint(op.tag, 16, "tag")
@@ -91,4 +105,4 @@ def apply_ops(shadow: Shadow, breaks: Iterable[OpLike] = (), makes: Iterable[OpL
                 raise JfError("BAD_ARG", "break requires closed point; make requires open point")
             closed[op.xp.chip] ^= mask
             tags[op.xp.chip * 128 + bit] = op.tag if phase else 0
-    return Shadow((closed[0], closed[1]), bytes(tags))
+    return Shadow(tuple(closed), bytes(tags))

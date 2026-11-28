@@ -1,9 +1,12 @@
-# Agent tools
+# JumperFree Host（给本地 Agent 用）
 
-工具 API 位于 [`python/src/jumperfree/agent/`](../python/src/jumperfree/agent/)，
-通过 `import jumperfree.agent` 使用。本目录仅作指引。
+JumperFree Host 是可安装的 Python 包 `jumperfree` 里的 stdio MCP 服务 `jumperfree-mcp`。
+Agent 在一次对话开始时拉起它，对话期间它保持运行，对话结束就退出。Claude Code、Cursor、
+Codex 共用这一个程序。
 
-接口、共享 Mock 会话、连续调用示例及 MCP 注册建议见
-[`docs/agent/tools.md`](../docs/agent/tools.md)。提供七个工具（含只读 `plan_net_change`、`guide_leds`、`all_open`）和 stdio MCP 服务
-`python -m jumperfree.agent.mcp_server`；行为规则见 `python/src/jumperfree/agent/SKILL.md`。
-没有自然语言解析或真实硬件验证；`verified=false`，进程退出丢失会话。
+- 安装与注册：[`docs/agent/install.md`](../docs/agent/install.md)
+- 工具、会话生命周期、分层：[`docs/agent/tools.md`](../docs/agent/tools.md)
+- Agent 行为规则：[`python/src/jumperfree/agent/SKILL.md`](../python/src/jumperfree/agent/SKILL.md)
+
+六个工具：`describe_board`、`get_state`、`plan_net_change`、`guide_leds`、`execute_plan`、
+`all_open`。Agent 只提交网名和节点；Host 计算路径；板上固件执行。`verified=false`。

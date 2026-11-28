@@ -21,8 +21,9 @@ class Xp:
     y: int
 
     def __post_init__(self) -> None:
-        _uint(self.chip, 2, "chip")
-        _uint(self.x, 8, "x (V0.1 X8–X15 are unwired)")
+        # Coarse wire limits; the board geometry (v01: c 0..1, x 0..7) is checked in plan.py.
+        _uint(self.chip, 8, "chip")
+        _uint(self.x, 16, "x")
         _uint(self.y, 8, "y")
 
     def bit(self) -> int:

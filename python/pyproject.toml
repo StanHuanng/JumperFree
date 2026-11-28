@@ -4,16 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jumperfree"
-version = "0.1.0"
-description = "JumperFree v1.0 host software: routing, board plans, and JF2 device communication"
+version = "0.2.0"
+description = "JumperFree Host: per-conversation stdio MCP server, router and JF2 device communication for local AI Agents"
 requires-python = ">=3.11"
-dependencies = []
+# pyserial is required: the Host exists to drive the board over USB serial.
+dependencies = ["pyserial>=3.5"]
 
 [project.optional-dependencies]
-host = ["pyserial"]
+host = []  # kept for old install commands (jumperfree[host])
 
 [project.scripts]
 jumperfree = "jumperfree.cli:main"
+jumperfree-mcp = "jumperfree.agent.mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -23,4 +25,5 @@ where = ["src"]
 include = ["jumperfree*"]
 
 [tool.setuptools.package-data]
-"jumperfree.board" = ["boards/v01/*.toml", "boards/v01/*.json"]
+"jumperfree.board" = ["boards/*/*.toml", "boards/*/*.json", "boards/*/docs/hw/*.md"]
+"jumperfree.agent" = ["SKILL.md"]

@@ -1,24 +1,30 @@
-"""Minimal stdio MCP server (hand-written JSON-RPC 2.0) over one AgentSession.
+"""stdio MCP server for JumperFree (hand-written JSON-RPC 2.0, no SDK).
 
-Newline-delimited JSON, single owner, calls handled strictly in order. No SDK:
-the subset needed (initialize, ping, tools/list, tools/call) is small and this
-keeps the default install dependency-free. Tool results are the tool dicts
-verbatim (verified=false); the server never adds, retries or recovers.
+One process = one Agent conversation = one AgentSession. Newline-delimited JSON
+on stdin/stdout, one owner, requests handled strictly in order. Logs go to
+stderr. On EOF, SIGTERM or Ctrl-C the session closes: LEDs off, SW ALLOPEN.
+
+Register the same command in Claude Code, Cursor or Codex:
+    jumperfree-mcp            (search the board on USB)
+    jumperfree-mcp --port COM4
+    jumperfree-mcp --mock     (in-memory JumperFree mini, no hardware)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
 from typing import IO, Sequence
 
+from .. import __version__
 from . import tools
-from .session import AgentSession, open_session
-from .tools import TOOL_SCHEMAS
+from .session import LEASE_MS, AgentSession, open_session
+from .tools import INSTRUCTIONS, TOOL_SCHEMAS
 
-PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "jumperfree", "version": "0.1.0"}
+PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+SERVER_INFO = {"name": "jumperfree", "version": __version__}
 
 _HANDLERS = {name: getattr(tools, name) for name in TOOL_SCHEMAS}
 
@@ -45,10 +51,13 @@ class McpServer:
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "params must be an object")
         if method == "initialize":
+            asked = params.get("protocolVersion")
+            version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
             return {"jsonrpc": "2.0", "id": msg_id, "result": {
-                "protocolVersion": PROTOCOL_VERSION,
+                "protocolVersion": version,
                 "capabilities": {"tools": {}},
                 "serverInfo": SERVER_INFO,
+                "instructions": INSTRUCTIONS,
             }}
         if method == "ping":
             return {"jsonrpc": "2.0", "id": msg_id, "result": {}}
@@ -94,14 +103,41 @@ def serve(session: AgentSession, stdin: IO[str], stdout: IO[str]) -> None:
             stdout.flush()
 
 
+def _stop_on_signals() -> None:
+    def stop(signum, frame):  # noqa: ARG001 - signal handler signature
+        raise SystemExit(0)
+    for name in ("SIGTERM", "SIGBREAK", "SIGHUP"):
+        if hasattr(signal, name):
+            try:
+                signal.signal(getattr(signal, name), stop)
+            except (OSError, ValueError):
+                pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m jumperfree.agent.mcp_server",
-                                     description="JumperFree stdio MCP server (verified=false)")
-    parser.add_argument("--port", help="serial port; omit to use MockDevice")
+    parser = argparse.ArgumentParser(prog="jumperfree-mcp",
+                                     description="JumperFree Host: stdio MCP server for local Agents")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--port", default="auto",
+                        help="serial port such as COM4 or /dev/ttyUSB0; default: search USB (auto)")
+    source.add_argument("--mock", action="store_true", help="use an in-memory board, no hardware")
+    parser.add_argument("--board", choices=["mini", "v01"],
+                        help="expected board (mock: which board to simulate, default mini)")
+    parser.add_argument("--lease-ms", type=int, default=LEASE_MS, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    session = open_session("serial", args.port) if args.port else open_session("mock")
-    with session:
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    session = (open_session("mock", board=args.board, lease_ms=args.lease_ms) if args.mock
+               else open_session("auto", None if args.port == "auto" else args.port,
+                                 board=args.board, lease_ms=args.lease_ms))
+    _stop_on_signals()
+    try:
         serve(session, sys.stdin, sys.stdout)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        session.close()
     return 0
 
 

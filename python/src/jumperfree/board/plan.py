@@ -58,6 +58,9 @@ def _points(state: dict[str, Any], profile: BoardProfile) -> dict[Xp, tuple[str,
     for name, net in sorted(state["nets"].items()):
         for chip, x, y in net["crosspoints"]:
             point = Xp(profile.chip_map[chip], x, y)
+            if not profile.geometry.check_point(point.chip, point.x, point.y):
+                raise PlanError("PLAN_VERIFY_FAILED", "交叉点超出板级 geometry",
+                                crosspoint=[chip, x, y])
             if point in points:
                 raise PlanError("PLAN_VERIFY_FAILED", "交叉点被多个 net 占用")
             points[point] = name, tags[name]
@@ -67,7 +70,7 @@ def _points(state: dict[str, Any], profile: BoardProfile) -> dict[Xp, tuple[str,
 
 def shadow_from_state(state: dict[str, Any], profile: BoardProfile) -> Shadow:
     points = _points(state, profile)
-    return apply_ops(Shadow(), makes=(SwitchOp(xp, True, tag) for xp, (_, tag) in sorted(points.items())))
+    return apply_ops(Shadow.empty(profile.geometry.chips), makes=(SwitchOp(xp, True, tag) for xp, (_, tag) in sorted(points.items())))
 
 
 def state_crosspoints_from_shadow(
@@ -80,7 +83,7 @@ def state_crosspoints_from_shadow(
     points: dict[Xp, int] = {}
     x_owners: dict[tuple[str, str, int], str] = {}
     chips = {index: name for name, index in profile.chip_map.items()}
-    for chip in range(2):
+    for chip in range(profile.geometry.chips):
         for bit in range(128):
             tag = shadow.tags[chip * 128 + bit]
             if not shadow.closed[chip] & (1 << bit):

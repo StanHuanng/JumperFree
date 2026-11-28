@@ -26,7 +26,7 @@ class MockDeviceTests(unittest.TestCase):
     def test_all_static_vectors_including_frozen_jf1(self):
         for path in sorted((ROOT/'protocol/vectors').glob('*.vec')):
             self.d=MockDevice(clock=lambda:0)
-            for step in parse_vec(path.read_text(),name=str(path)):
+            for step in parse_vec(path.read_text(encoding='utf-8'),name=str(path)):
                 with self.subTest(path=path.name,line=step.line):
                     if isinstance(step,VecDirective):self.d.directive(step.name,step.args)
                     else:

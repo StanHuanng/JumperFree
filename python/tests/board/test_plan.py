@@ -24,7 +24,9 @@ def congested_state(profile):
 class TypeTests(unittest.TestCase):
     def test_ranges_tokens_and_immutable_canonical_order(self):
         self.assertEqual(Xp(1, 7, 7).bit(), 63)
-        for args in ((2, 0, 0), (-1, 0, 0), (0, 8, 0), (0, 15, 0), (0, 0, 8), (True, 0, 0)):
+        # Xp holds coarse wire limits (chip 0..7, x 0..15); v01's c 0..1 / x 0..7 is a
+        # geometry check in plan.py (see ProfileGeometryTests).
+        for args in ((8, 0, 0), (-1, 0, 0), (0, 16, 0), (0, 0, 8), (True, 0, 0)):
             with self.subTest(args=args), self.assertRaises(JfError) as caught:
                 Xp(*args)
             self.assertEqual(caught.exception.code, 'BAD_ARG')

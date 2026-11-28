@@ -6,7 +6,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..board import BoardProfile, compile_led_plan, compile_plan, state_with_tags
+from ..board import TAG_PALETTE, BoardProfile, compile_led_plan, compile_plan, net_tags, state_with_tags
 from ..core import JfError
 from ..host import ApplyResult, DeviceClient, HostError
 from ..routing.steiner import (
@@ -64,6 +64,7 @@ class ControlService:
         self._blocked = False
         self._unconfirmed = False
         self._all_opened = False  # permanent for this service; never cleared by acknowledge
+        self._lost: JfError | None = None
 
     def _result(self, *args: Any, **kwargs: Any) -> ControlResult:
         return ControlResult(*args, **kwargs, device=self._device_label)
@@ -118,14 +119,50 @@ class ControlService:
                 return self._result(False, "guide_leds", router=router, error=error)
             source, state = "plan", candidate
         try:
-            frames = compile_led_plan(state).frames
-            updates = {clip: tuple(frames.get(clip, (0, 0, 0))) for clip in range(16)}
+            if self._profile.wire_board == "v01":
+                frames = compile_led_plan(state).frames
+                updates = {clip: tuple(frames.get(clip, (0, 0, 0))) for clip in range(16)}
+            else:
+                frames, updates = self._mini_frames(state)
             count = self._client.led_batch(updates)
         except (JfError, HostError) as exc:
             return self._result(False, "guide_leds", error=exc)
-        led = {"source": source, "count": count, "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
+        if self._profile.wire_board == "v01":
+            led = {"source": source, "count": count,
+                   "clips": {f"Clip{c}": "%02x%02x%02x" % rgb for c, rgb in updates.items()}}
+        else:
+            led = self._mini_guide(source, count, state, frames)
         return self._result(True, "guide_leds", router=copy.deepcopy(crossbar_query(state)),
                              led=led)
+
+    def _mini_frames(self, state: dict[str, Any]):
+        tags = net_tags(state)
+        frames = compile_led_plan(state, TAG_PALETTE, self._profile.led_map, tags).frames
+        updates = {led: tuple(frames.get(led, (0, 0, 0))) for led in range(self._profile.geometry.leds)}
+        return frames, updates
+
+    def _mini_guide(self, source: str, count: int, state: dict[str, Any], frames) -> dict[str, Any]:
+        """Placement guide: every lit clip with its net, color and row/column."""
+        nodes = self._profile.nodes
+        before = {node: name for name, net in self._confirmed["nets"].items() for node in net["nodes"]}
+        after = {node: name for name, net in state["nets"].items() for node in net["nodes"]}
+        nets = []
+        for name, tag in net_tags(state).items():
+            members = state["nets"][name]["nodes"]
+            nets.append({"net": name, "color": "%02x%02x%02x" % TAG_PALETTE[tag - 1],
+                         "nodes": [_describe(node, nodes[node]) for node in members]})
+        return {
+            "source": source, "count": count, "lit": len(frames), "nets": nets,
+            "added_nodes": sorted(node for node in after if before.get(node) != after[node]),
+            "removed_nodes": sorted(node for node in before if before[node] != after.get(node)),
+        }
+
+    def mark_lost(self, error: JfError) -> None:
+        """The device session ended outside this service (lease expiry, fault, reboot,
+        lost transport). Intent is history only and no further write is allowed."""
+        self._blocked = True
+        self._unconfirmed = True
+        self._lost = error
 
     def all_open(self) -> ControlResult:
         """Open every switch (legal in any state). Not a recovery path: the service stays
@@ -169,6 +206,10 @@ class ControlService:
         return self._result(True, "plan", router=router, plan=summary)
 
     def _blocked_result(self, operation: str) -> ControlResult:
+        if self._lost is not None:
+            return self._result(False, operation, error=HostError(
+                "SESSION_LOST", "the device session ended; restart the Host to continue",
+                cause=self._lost.as_dict()))
         return self._result(False, operation, error=HostError(
             "CONTROL_BLOCKED", "acknowledge_unresolved is required before further writes",
         ))
@@ -176,6 +217,16 @@ class ControlService:
     def _candidate(self, operation: str, net_id: str, nodes: list[str] | None):
         """Return (router, plan, candidate, error); the confirmed state is never mutated."""
         router = None
+        if operation in {"create", "modify"} and isinstance(nodes, list):
+            known = self._profile.nodes
+            hidden = sorted({n for n in nodes if isinstance(n, str) and n in known
+                             and known[n]["kind"] not in {"clip", "service"}})
+            if hidden:
+                return None, None, None, HostError(
+                    "NODE_RESERVED", "reserved nodes cannot be used in a net", nodes=hidden)
+            if {"TEST_SRC", "SVC_GND"} <= set(nodes) and self._profile.wire_board != "v01":
+                return None, None, None, HostError(
+                    "SERVICE_SHORT", "TEST_SRC and SVC_GND cannot share a net")
         try:
             candidate = copy.deepcopy(self._confirmed)
             if operation in {"delete", "modify"}:
@@ -212,3 +263,11 @@ class ControlService:
         return self._result(True, operation,
                              netlist=copy.deepcopy(crossbar_query(self._confirmed)),
                              router=router, apply=result)
+
+
+def _describe(name: str, node: dict[str, Any]) -> dict[str, Any]:
+    if node.get("kind") == "clip":
+        row = node["row"]
+        side = "far side (A, back)" if row == "A" else "near side (B, front)"
+        return {"node": name, "row": row, "col": node["col"], "where": f"row {row} column {node['col']}, {side}"}
+    return {"node": name, "where": "internal service channel, nothing to plug"}

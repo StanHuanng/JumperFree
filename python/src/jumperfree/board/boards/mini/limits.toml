@@ -1,0 +1,6 @@
+# Firmware limits read on the board (CFG GET); electrical limits are in docs/hw.
+status = "firmware"
+max_ops = 256
+brightness_cap = 64
+lease_default_ms = 0
+t_gap_ms = 1

@@ -1,182 +1,112 @@
-# Agent tools and MCP server
+# JumperFree Host: Agent tools and MCP server
 
-`jumperfree.agent` provides seven tools over one `AgentSession` (`MockAgentSession`
-for mock). They are served over stdio by `jumperfree.agent.mcp_server`; agent behavior
-rules are in [`SKILL.md`](../../python/src/jumperfree/agent/SKILL.md). The session loads `BoardProfile`, creates an empty `MockDevice`, connects one
-`DeviceClient`, and creates one `ControlService`. Reuse that session for every
-call in a conversation. State lives only in memory and is lost at process exit;
-new sessions start empty. Close explicitly in `finally` or use `with`.
+JumperFree Host is a local control program for local AI Agents. It is the
+installable Python package `jumperfree`. The Agent client starts one Host
+process at the start of a conversation (`jumperfree-mcp`, stdio MCP). The process
+runs during the conversation and exits when the conversation ends.
 
-## Session factory
+The Host is not a web console, not a wiring GUI, not a boot-time service, and it
+holds no language model. Claude Code, Cursor and Codex use the same command; see
+[install.md](install.md). Agent rules: [`SKILL.md`](../../python/src/jumperfree/agent/SKILL.md).
 
-`open_session("mock")` returns a `MockAgentSession` (fresh `MockDevice`).
-`open_session("serial", port, baudrate=None, timeout=None)` wraps the existing
-`SerialTransport` in an `AgentSession`; pyserial stays optional and is imported
-only on this path (missing → `SERIAL_UNAVAILABLE`; mock is unaffected). Tests
-inject a fake transport via `serial_factory`. A serial session requires an
-initially empty device. All results are software/Mock-level evidence only.
+## Layers
 
-## Interface
-
-Import `open_session`, `AgentSession`, `MockAgentSession`, `create_net`, `modify_net`, `delete_net`, `get_state`, `plan_net_change`,
-`guide_leds`, `all_open`, `TOOL_SCHEMAS`, and `TOOL_DESCRIPTIONS` from `jumperfree.agent`.
-The Python functions take the session as their first argument. Bind it once so
-the registered tools have these user-facing arguments:
-
-| Tool | Arguments | ControlService operation |
+| Layer | Does | Never does |
 | --- | --- | --- |
-| `create_net` | `name: str, nodes: list[str]` | `create(net_id=name, nodes=nodes)` |
-| `modify_net` | `name: str, nodes: list[str]` | `modify(net_id=name, nodes=nodes)` |
-| `delete_net` | `name: str` | `delete(net_id=name)` |
-| `plan_net_change` | `action: "create"\|"modify"\|"delete", name: str, nodes: list[str]` (omit `nodes` for delete) | `plan(action, net_id, nodes)` |
-| `guide_leds` | optional `action`, `name`, `nodes` (as `plan_net_change`; give them together) | `guide_leds()` or `guide_leds(action, net_id=name, nodes)` |
-| `all_open` | none | `all_open()` |
-| `get_state` | none | `query()` |
+| Agent | Names nets and nodes; follows plan → user yes → LED guide → wait → execute | Choose crosspoints or BUS lines, write switch registers |
+| Host (`jumperfree.agent` → `service` → `board`/`routing` → `host`) | Validates nodes, routes, compiles the SwitchPlan, sends JF2, keeps intent in memory | Persist state, run a model, serve HTTP |
+| Board firmware | Executes JF2 safely: all switches open at boot, on lease expiry, on faults; emergency stop resets the MCU | Accept switch commands outside JF2 transactions |
 
-`name` is required and must contain a non-whitespace character. It is passed
-unchanged as the exact net ID. `nodes` is a required array of strings containing
-at least two distinct, exact profile node names. The packaged profile has
-`Clip0` through `Clip15`, case-sensitive. Unknown, ambiguous, misspelled,
-whitespace-padded, and physical-line names are errors. The tools never infer,
-substitute, expand or edit the user's nodes. Semantic validation and routing
-remain in ControlService and its existing router. No path or switch is selected
-by the agent layer.
+One process = one session = one owner. Tool calls run strictly in order. Process
+exit loses the session; there is no database.
 
-Every tool returns a JSON-serializable dictionary using
-`ControlResult.as_dict()`:
+## Session lifecycle
 
-- `ok`, `operation` (`create`, `modify`, `delete`, or `query`);
-- `netlist`, `router`, `error`, `apply`;
-- `device`: `"MockDevice"` for mock sessions, `"serial:<port>"` for serial sessions; `verified=false` always.
+1. **Lazy connect.** The first tool call opens the board: `--port COMx`, or a search
+   over USB-UART bridges (WCH VID 0x1A86) that sends `JF2 INFO` and accepts a JF2
+   reply. Other USB serial devices are never written to. A port held by another
+   program returns `PORT_BUSY`; no board returns `DEVICE_NOT_FOUND`. Until the
+   first connect succeeds, each tool call tries again.
+2. **Board detection.** `INFO board=` selects the packaged profile: `v04` →
+   JumperFree mini (`boards/mini`), `v01` → v0.1 (`boards/v01`). `--board` makes a
+   different board an error (`BOARD_MISMATCH`).
+3. **Clean start.** Latched faults (for example `LEASE_EXPIRED` from a Host that died)
+   are cleared with `FAULT CLEAR`; an active fault stops the start (`DEVICE_FAULT`).
+   `HELLO` arms the board. Switches left closed by an earlier program are opened
+   (`SW ALLOPEN`, then `HELLO`). Both actions appear in `describe_board.startup_notes`.
+4. **Lease and heartbeat.** The Host sends `LEASE 5000` and then `PING` every 1 s.
+   The heartbeat takes the same lock as tool calls, so it never interleaves with a
+   transaction. If the Host stops for more than 5 s, the firmware opens every switch.
+5. **Lost session.** A heartbeat that sees a fault mask (lease expiry), a lower uptime
+   (MCU reset or emergency stop) or no reply ends the session: every later call
+   returns `SESSION_LOST` with the cause. The Host never re-arms on its own; restart
+   the Host (new conversation, or reconnect the MCP server).
+6. **Exit.** On stdin EOF, SIGTERM/SIGBREAK or Ctrl-C the Host turns all LEDs off,
+   sends `SW ALLOPEN` and closes the port. If the process is killed without cleanup,
+   the lease opens the switches within 5 s (the LEDs then keep their last colors).
 
-Successful `netlist` contains confirmed session intent. Every failure has
-`netlist=null`. A write's `router` is a candidate, and a query's `router` is
-historical intent; neither is device confirmation. Error codes, messages,
-details and apply results from ControlService are preserved. Shape validation
-uses existing `INVALID_NET_ID` / `BAD_ARG` codes. Calls after close return
-`SESSION_CLOSED` before shape validation, including for malformed arguments.
-Connection/close failures raise the existing
-structured exceptions; they occur outside the tool calls.
+## Tools
 
-## Planning vs. execution
+| Tool | Arguments | Device I/O | Result |
+| --- | --- | --- | --- |
+| `describe_board` | – | connect only | board name, clips (row, column), service nodes and limits, capacity, `startup_notes` |
+| `get_state` | – | none | confirmed netlist, or `STATE_UNCONFIRMED` after a failed change |
+| `plan_net_change` | `action` create/modify/delete, `name`, `nodes` (not for delete) | none | router candidate, `plan` summary (breaks, makes, disturbed nets), `plan_id` |
+| `guide_leds` | optional `plan_id` | one `LED BATCH` | planned (with `plan_id`) or confirmed netlist on the LEDs; `led.nets[].nodes[].where`, `added_nodes`, `removed_nodes` |
+| `execute_plan` | `plan_id` | one JF2 transaction | confirmed netlist and the device's apply report |
+| `all_open` | – | `SW ALLOPEN`, `HELLO`, `LEASE` | empty netlist; the session continues |
 
-`plan_net_change` is a read-only dry run; `create_net`, `modify_net` and
-`delete_net` are the execution tools and are unchanged. The three intents are
-expressed by `action` (`create`, `modify`, `delete`) with the same `name` and
-`nodes` arguments as the matching execution tool (`nodes` only for create and
-modify). It deep-copies the confirmed intent, runs the router and `compile_plan`,
-and returns `operation="plan"` with:
+Every result is a JSON object with `ok`, `operation`, `netlist`, `router`, `error`,
+`apply`, `device` and `verified=false`. Error codes pass through unchanged.
 
-- `router`: the candidate routes (software result, not current wiring);
-- `plan`: `action`, `net`, `base_epoch`, `breaks` / `makes` (switch operations to
-  open / close), `disturbed_nets`, `occupied_nodes` (nodes in the candidate
-  netlist) and `occupancy`;
-- `netlist=null`, `apply=null`, `verified=false`.
+### Order is enforced by the Host
 
-It performs no device I/O (no `TXN BEGIN`, no LED), and leaves confirmed intent,
-epoch, tags and the device untouched. Failures return the same error code,
-message, details and `router` as the direct tool would for the same input
-(unknown node, duplicate/unknown net, capacity, shape errors). `SESSION_CLOSED`
-and `CONTROL_BLOCKED` are returned in the same precedence as for writes: a
-blocked session cannot be planned against, because its confirmed intent is no
-longer trustworthy. An unknown `action` returns `BAD_ARG`. A successful plan only
-shows what execution would attempt from the current confirmed state; execution may
-still fail at the device, and a plan is never evidence of connectivity.
+- `plan_net_change` issues `plan_id` = hash of (action, name, nodes, state version).
+- `guide_leds(plan_id)` marks that plan as shown.
+- `execute_plan(plan_id)` runs only a known plan of the current state version that
+  was shown: otherwise `PLAN_UNKNOWN`, `PLAN_STALE` or `PLAN_NOT_GUIDED`, with no
+  device I/O. Any change (or `all_open`) makes every older plan invalid.
+- The user's confirmation itself cannot be checked by the Host; the Skill and the
+  MCP `instructions` require it.
 
-## LED guidance and all-open
+### Node rules (JumperFree mini)
 
-`guide_leds` colors the Clip LEDs with one `LED BATCH`. With no arguments it uses the
-**confirmed** netlist (`led.source="confirmed"`); with `action`/`name`/`nodes` it uses the
-candidate netlist that `plan_net_change` would produce (`led.source="plan"`), so the
-planned nodes can be lit before executing. The change is not applied and the confirmed
-state is unchanged; routing/validation errors match `plan_net_change`. It always sends all 16 clips: clips in a net get that net's palette
-color, every other clip is sent `000000`, so stale guidance is cleared and `n` is always
-16 (an empty netlist blanks all LEDs). The result carries `led={count, clips}`. It does
-no switch change. If the device is not ARMED, the device's `SAFE_MODE` error is returned
-unchanged; the tool never sends HELLO or re-arms. It is refused with `STATE_UNCONFIRMED`
-when the state is unconfirmed, `CONTROL_BLOCKED` when blocked.
-
-`all_open` sends `SW ALLOPEN` (legal in SAFE, ARMED and STAGING). It is not a recovery
-tool. On success the device is empty and SAFE, but this layer only has the device's
-success report, so the session becomes permanently unconfirmed: `get_state` returns
-`STATE_UNCONFIRMED` with `netlist=null`, and create/modify/delete/plan/guide_leds return
-`SESSION_REESTABLISH_REQUIRED` with no device I/O. `acknowledge_unresolved` (not exposed)
-cannot lift this; build a new session (HELLO re-arms). A failed `all_open` leaves the state
-unconfirmed, and also blocks writes unless it was a device-reported error.
-
-## Confirmation and failure behavior
-
-The [ControlService contract](../service/control.md) applies unchanged. Routing
-and compilation failures never apply or change confirmed intent. Each valid
-write delegates once; failed applies are never retried by this layer. Any failed
-apply makes subsequent queries return `STATE_UNCONFIRMED` with `netlist=null`.
-For `unresolved`, `timeout`, or `transport`, or any failed apply with
-`state_changed="yes"` or `"unknown"`, subsequent writes return `CONTROL_BLOCKED`
-before routing or execution. This includes `device_error` results whose state
-change is unknown. Queries perform no device I/O.
-
-No tool exposes or calls `acknowledge_unresolved`, clears nets/faults, reconnects,
-or bypasses the service write gate or the client's stop. The session sets frame
-retries to zero. DeviceClient's existing COMMIT-response-loss handling can issue
-a transaction query; it does not resend COMMIT. This existing protocol behavior
-is unchanged and does not provide an agent retry/recovery policy.
-
-## Continuous Mock example
-
-Run from `python/` with `PYTHONPATH=src`. This is the Python demo; no additional
-CLI command is installed.
-
-```python
-from jumperfree.agent import (
-    MockAgentSession, create_net, modify_net, delete_net, get_state,
-)
-
-session = MockAgentSession()
-try:
-    results = [
-        create_net(session, "NET_A", ["Clip1", "Clip8"]),
-        create_net(session, "NET_B", ["Clip2", "Clip9"]),
-        modify_net(session, "NET_A", ["Clip1", "Clip10"]),
-        get_state(session),
-        delete_net(session, "NET_B"),
-    ]
-    for result in results:
-        print(result)
-    # The query retains A=[Clip1, Clip10], B=[Clip2, Clip9].
-    # The final delete retains only A=[Clip1, Clip10].
-    # Every result has device="MockDevice" (mock session), verified=False.
-finally:
-    session.close()
-```
+- Clips `A1`..`A24` (row far from the user) and `B1`..`B24` (row near the user),
+  column 1..24 from the left. LED index = FLIP number (see `boards/mini/nodes.json`).
+- `TEST_SRC` = U307 Y6 (PB8 via 1.5 kOhm, signal level ~3.3 V). `SVC_GND` = U307 Y7.
+  A net with both is refused (`SERVICE_SHORT`).
+- U307 Y0..Y5 carry measurement paths. They are internal nodes `~U307.Yn`: the router
+  never uses them and a net that names them is refused (`NODE_RESERVED`).
+- One net = one BUS (X line shared by all chips) and one JF2 tag; each clip in the net
+  closes one switch on its own chip. At most 15 nets (tags 1..15).
+- LED color = tag, so a net keeps its color while other nets change.
 
 ## MCP server
 
-```sh
-cd python && PYTHONPATH=src python3 -m jumperfree.agent.mcp_server [--port /dev/ttyACM0]
-```
+`jumperfree-mcp [--port COMx | --mock] [--board mini|v01]` (also
+`python -m jumperfree.agent.mcp_server`). Hand-written newline-delimited JSON-RPC 2.0
+over stdio: `initialize` (protocol versions 2025-06-18, 2025-03-26, 2024-11-05;
+the result carries `instructions` with the fixed order), `ping`, `tools/list`,
+`tools/call`. Notifications are ignored. Arguments must match the schema exactly
+(missing or extra keys → `-32602`). `tools/call` returns the tool dict as
+`structuredContent` and as JSON text; `isError = not ok`. Logs go to stderr.
 
-Without `--port` the session is a fresh `MockDevice`; with it, a serial session
-(pyserial required, imported lazily). The server is hand-written newline-delimited
-JSON-RPC 2.0 over stdio and supports `initialize`, `ping`, `tools/list` and
-`tools/call`; notifications are ignored. Trade-off: the needed subset is small, so no
-MCP SDK is used and the default install stays dependency-free (no `agent` extra).
-
-- One owner, one session for the process lifetime, calls handled strictly in order;
-  the session is closed on EOF.
-- `tools/list` returns `TOOL_SCHEMAS`. Arguments must match the schema exactly
-  (missing or extra keys → JSON-RPC `-32602`; nothing is guessed or dropped).
-- `tools/call` returns the tool dict verbatim as `structuredContent` and as JSON
-  text; `isError` is `not ok`. Error codes (`CONTROL_BLOCKED`, `SAFE_MODE`, ...) are
-  never rewritten, retried or recovered by the server.
-
-Example registration (MCP client config): command `python3`, args
-`["-m", "jumperfree.agent.mcp_server"]`, env `PYTHONPATH=<repo>/python/src`.
+`--mock` runs an in-memory JumperFree mini (`MockDevice` with the v04 geometry) for
+tests and demos without hardware.
 
 ## Limits
 
-Software/Mock evidence only, single owner, sequential calls, initially empty device, no database
-or persistence, no external-change monitoring or reconciliation. There is no
-natural-language parser, LLM SDK, HTTP server, alternate adapter, hardware,
-STM32 or firmware integration. Hardware wiring, timing and electrical behavior
-remain unverified. The layer does not construct JF2 frames, CRCs, router paths,
-Y channels, crosspoints or physical plans.
+- `verified=false` always: an executed plan is the firmware's report, not a
+  measurement of electrical contact.
+- Matrix paths are about 100 Ohm; at most 15 mA per switch; signals within VEE..VDD.
+- One BUS per net: power nets for larger loads (parallel BUS) are not supported yet.
+- No measurement tools yet (the firmware `meas`/`probe`/`scope` commands are console
+  commands, not JF2).
+
+## Hardware check
+
+`python/hil/mini_c3_aht.py` drives the installed `jumperfree-mcp` like an Agent on a
+real JumperFree mini with an ESP32-C3 (jf-c3-env firmware) and an AHT20 on the
+board. The C3's I2C scan is independent evidence that the matrix really connects
+the sensor. It covers routing, `PORT_BUSY`, delete/re-create, idle lease, normal
+exit and a killed Host (lease expiry).
