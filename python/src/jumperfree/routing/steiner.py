@@ -236,12 +236,74 @@ def _require_all_permanently_joined(missing: Iterable[str]) -> None:
         )
 
 
+def _parallel_groups(
+    graph: ResourceGraph,
+    fixed: Mapping[Vertex, list[Vertex]],
+    tree: set[Vertex],
+    members: list[str],
+    attachments: Mapping[str, LineVertex],
+    blocked: set[LineVertex],
+    count: int,
+) -> tuple[list[LineVertex], list[tuple[str, int, int]]]:
+    """Pick ``count`` free line groups that every member can reach with one switch.
+
+    A group is the fixed closure of one free line (on JumperFree mini: one BUS,
+    the X line of every chip). It must hold no external node and no line of the
+    tree or of another net. Each member's own line then closes one extra switch
+    onto the group, so the net gets ``count`` more paths in parallel. Groups are
+    taken in line order (lowest BUS first).
+    """
+    taken = set(tree)
+    lines: list[LineVertex] = []
+    points: list[tuple[str, int, int]] = []
+    found = 0
+    for start in graph.exclusive_lines:
+        if found == count:
+            break
+        if start in taken or start in blocked:
+            continue
+        group = _fixed_closure([start], fixed, blocked)
+        taken.update(group)
+        if any(isinstance(vertex, str) for vertex in group):
+            continue
+        hops = []
+        for node in members:
+            chip, axis, _ = attachments[node]
+            other = "Y" if axis == "X" else "X"
+            ends = sorted(line for line in group if line[0] == chip and line[1] == other)
+            if not ends:
+                break
+            pair = (attachments[node], ends[0])
+            hops.append(_point(*pair))
+        if len(hops) != len(members):
+            continue
+        lines.extend(sorted(group, key=_vertex_key))
+        points.extend(hops)
+        found += 1
+    if found < count:
+        raise RouteError(
+            "NO_FREE_PATH",
+            "not enough free lines for the parallel paths",
+            needed=count + 1,
+            found=found + 1,
+            resource_reason="RESOURCE_EXHAUSTED",
+        )
+    return lines, points
+
+
 def crossbar_create_net(
-    state: dict[str, Any], net_id: str, nodes: Iterable[str]
+    state: dict[str, Any], net_id: str, nodes: Iterable[str], *, parallel: int = 1
 ) -> dict[str, Any]:
-    """Route a new net with a deterministic greedy Steiner approximation."""
+    """Route a new net with a deterministic greedy Steiner approximation.
+
+    ``parallel`` > 1 adds that many paths in total: after the tree, every member
+    closes one switch onto each extra free line group (see ``_parallel_groups``).
+    The net record then carries ``parallel``.
+    """
 
     state, graph = _validated_state(state)
+    if type(parallel) is not int or not 1 <= parallel <= 16:
+        raise RouteError("INVALID_PARALLEL", "parallel must be an integer 1..16", parallel=parallel)
     if not isinstance(net_id, str) or not net_id.strip():
         raise RouteError("INVALID_NET_ID", "net id must be a non-empty string")
     if net_id in state["nets"]:
@@ -304,16 +366,23 @@ def crossbar_create_net(
         crosspoints.update(points)
         remaining -= {vertex for vertex in tree if isinstance(vertex, str)}
 
-    lines = sorted(vertex for vertex in tree if isinstance(vertex, tuple))
     _require_all_permanently_joined(
         node for node, line in attachments.items() if line in tree and node not in members
     )
+    if parallel > 1:
+        extra_lines, extra_points = _parallel_groups(
+            graph, fixed, tree, members, attachments, blocked, parallel - 1)
+        tree.update(extra_lines)
+        crosspoints.update(extra_points)
+    lines = sorted(vertex for vertex in tree if isinstance(vertex, tuple))
     updated = copy.deepcopy(state)
     updated["nets"][net_id] = {
         "crosspoints": [list(point) for point in sorted(crosspoints)],
         "lines": [list(line) for line in lines],
         "nodes": members,
     }
+    if parallel > 1:
+        updated["nets"][net_id]["parallel"] = parallel
     all_points = [
         point
         for net in updated["nets"].values()
@@ -345,13 +414,17 @@ def crossbar_delete_net(state: dict[str, Any], net_id: str) -> dict[str, Any]:
 
 def _net_view(net_id: str, net: dict[str, Any]) -> dict[str, Any]:
     points = copy.deepcopy(net["crosspoints"])
-    return {
+    view = {
         "crosspoints": points,
         "lines": copy.deepcopy(net["lines"]),
         "net": net_id,
         "nodes": list(net["nodes"]),
         "path_hops": len(points),
     }
+    for key in ("parallel", "current_ma"):
+        if key in net:
+            view[key] = net[key]
+    return view
 
 
 def crossbar_query(state: dict[str, Any], net_id: str | None = None) -> dict[str, Any]:
