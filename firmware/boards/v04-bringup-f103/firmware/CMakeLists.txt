@@ -11,6 +11,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 project(V04_BRINGUP C ASM)
+
+# Shared JF2 core (firmware/src + firmware/include), board profile v04
+set(JF2_CORE ${CMAKE_CURRENT_LIST_DIR}/../../..)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 add_executable(V04_BRINGUP
@@ -25,19 +28,19 @@ add_executable(V04_BRINGUP
   app/Src/scope.c
   app/Src/jf2_link.c
   app/Src/main.c
-  app/jf2/jf2_protocol.c
-  app/jf2/jf2_state.c
-  app/jf2/jf2_crc.c
+  ${JF2_CORE}/src/jf2_protocol.c
+  ${JF2_CORE}/src/jf2_state.c
+  ${JF2_CORE}/src/jf2_crc.c
 )
 
 target_include_directories(V04_BRINGUP PRIVATE
   app/Inc
-  app/jf2
+  ${JF2_CORE}/include
   cmsis/core
   cmsis/device
 )
 
-target_compile_definitions(V04_BRINGUP PRIVATE STM32F103xB)
+target_compile_definitions(V04_BRINGUP PRIVATE STM32F103xB JF2_PROFILE_V04)
 
 set(CPU_FLAGS -mcpu=cortex-m3 -mthumb)
 target_compile_options(V04_BRINGUP PRIVATE

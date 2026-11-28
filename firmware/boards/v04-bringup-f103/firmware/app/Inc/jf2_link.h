@@ -1,6 +1,6 @@
 /**
   * file  : jf2_link.h
-  * brief : JF2 protocol core (app/jf2, widened to the v0.4 topology) on the
+  * brief : Shared JF2 protocol core (firmware/src, JF2_PROFILE_V04) on the
   *         USART1 console. Lines that start with "JF" go to the core without
   *         echo; everything else stays a console command.
   */
