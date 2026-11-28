@@ -1,6 +1,6 @@
 """Normative switch shadow shared with the firmware model.
 
-v01: 2 chips, 160 bytes. v04 (JumperFree mini): 7 chips, 560 bytes. Layout per
+v01: 2 chips, 160 bytes. mini (JumperFree mini): 7 chips, 560 bytes. Layout per
 chip: 128-bit little-endian bitmap (bit = x*8+y); then 128 tag nibbles per chip.
 """
 

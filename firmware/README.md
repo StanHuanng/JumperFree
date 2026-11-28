@@ -24,25 +24,25 @@ make -C firmware test
 
 The core is compiled for one board profile, chosen in
 [`include/jf2_board.h`](include/jf2_board.h): v01 by default (2 chips, X 0..7,
-16 LEDs) or v04 with `-DJF2_PROFILE_V04` (7 chips, X = BUS 0..15 shared by all
+16 LEDs) or mini with `-DJF2_PROFILE_MINI` (7 chips, X = BUS 0..15 shared by all
 chips, Y = one clip per chip, chip 6 = U307 limited to y 6/7, 48 LEDs). The
 differences are listed in [`protocol/jf2.md`](../protocol/jf2.md#板级-profile).
 `make test` runs both: `test-v01` (core self-tests plus the shared vectors) and
-`test-v04` (`host_test/core_tests_v04.c`; the shared vectors are v01 only).
-The v0.4 board project
-[`boards/v04-bringup-f103`](boards/v04-bringup-f103/README.md) builds this core
-with the v04 profile.
+`test-mini` (`host_test/core_tests_mini.c`; the shared vectors are v01 only).
+The JumperFree mini project
+[`boards/mini-f103`](boards/mini-f103/README.md) builds this core
+with the mini profile.
 
 ```sh
-make -C firmware test-v04
+make -C firmware test-mini
 # without make:
 mkdir -p firmware/build
-gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -DJF2_PROFILE_V04 \
+gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -DJF2_PROFILE_MINI \
   -Ifirmware/include -Ifirmware/host_test \
   firmware/src/jf2_protocol.c firmware/src/jf2_state.c firmware/src/jf2_crc.c \
   firmware/host_test/memory_hw.c firmware/host_test/vector_runner.c \
-  firmware/host_test/core_tests_v04.c -o firmware/build/jf2_host_test_v04
-./firmware/build/jf2_host_test_v04 --self-test
+  firmware/host_test/core_tests_mini.c -o firmware/build/jf2_host_test_mini
+./firmware/build/jf2_host_test_mini --self-test
 ```
 
 `--self-test` runs core acceptance assertions and vector parser/matcher checks.

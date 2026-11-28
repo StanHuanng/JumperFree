@@ -27,7 +27,7 @@ exit loses the session; there is no database.
    reply. Other USB serial devices are never written to. A port held by another
    program returns `PORT_BUSY`; no board returns `DEVICE_NOT_FOUND`. Until the
    first connect succeeds, each tool call tries again.
-2. **Board detection.** `INFO board=` selects the packaged profile: `v04` →
+2. **Board detection.** `INFO board=` selects the packaged profile: `mini` →
    JumperFree mini (`boards/mini`), `v01` → v0.1 (`boards/v01`). `--board` makes a
    different board an error (`BOARD_MISMATCH`).
 3. **Clean start.** Latched faults (for example `LEASE_EXPIRED` from a Host that died)
@@ -91,7 +91,7 @@ the result carries `instructions` with the fixed order), `ping`, `tools/list`,
 (missing or extra keys → `-32602`). `tools/call` returns the tool dict as
 `structuredContent` and as JSON text; `isError = not ok`. Logs go to stderr.
 
-`--mock` runs an in-memory JumperFree mini (`MockDevice` with the v04 geometry) for
+`--mock` runs an in-memory JumperFree mini (`MockDevice` with the mini geometry) for
 tests and demos without hardware.
 
 ## Limits

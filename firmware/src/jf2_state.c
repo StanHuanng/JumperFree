@@ -132,7 +132,7 @@ static const char *small_uint(const char *s, unsigned max, char stop, unsigned *
 }
 
 /* +c:x:y@tag / -c:x:y with c < JF2_CHIPS, x < JF2_XN, y < JF2_YN, tag 1..15.
- * v04: chip 6 (U307) only y 6 (TEST_SRC) and y 7 (SVC_GND). */
+ * mini: chip 6 (U307) only y 6 (TEST_SRC) and y 7 (SVC_GND). */
 static bool parse_op(const char *s, Jf2Op *op)
 {
     unsigned c,x,y,tag=0;
@@ -200,7 +200,7 @@ static bool valid_target(Jf2Device *d)
         }
     }
     /* Shared lines are owned across chips, private lines per chip
-     * (v01: Y shared, X private; v04: X = BUS shared, Y = clip private). */
+     * (v01: Y shared, X private; mini: X = BUS shared, Y = clip private). */
 #if JF2_X_SHARED
 #define X_OWNER(c,x) x_owner[0][x]
 #define Y_OWNER(c,y) y_owner[c][y]
