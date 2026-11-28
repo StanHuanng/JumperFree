@@ -56,8 +56,14 @@ class C3:
         return set(line.split()[1:]) if line else set()
 
     def stat(self) -> dict:
+        """jf-c3-env 0.4 prints STAT {json}; later C3 firmware prints STAT k=v ..."""
         line = self.ask("stat", "STAT ")
-        return json.loads(line[5:]) if line else {}
+        if not line:
+            return {}
+        body = line[5:].strip()
+        if body.startswith("{"):
+            return json.loads(body)
+        return dict(token.split("=", 1) for token in body.split() if "=" in token)
 
 
 class Mcp:
@@ -168,8 +174,8 @@ def main() -> int:
           f"plan+guide+execute {min(times):.2f}..{max(times):.2f} s")
     time.sleep(2.5)
     stat = c3.stat()
-    check("AHT reading plausible", stat.get("t") is not None and stat.get("rh") is not None,
-          f"t={stat.get('t')} rh={stat.get('rh')}")
+    check("AHT reading plausible", stat.get("t") is not None and stat.get("rh") is not None
+          and str(stat.get("aht", "1")) != "0", f"t={stat.get('t')} rh={stat.get('rh')} aht={stat.get('aht')}")
     vcc = host.tool("measure_voltage", node="A19")
     gnd = host.tool("measure_voltage", node="A16")
     check("AHT VCC A19 ~3.3 V on the 3V3 net", vcc.get("ok") and 3.0 <= vcc["volts"] <= 3.5
