@@ -17,12 +17,42 @@ JF1 的解析、HostSession、LED 值和错误字节永久冻结，MockDevice �
 
 ## 开关 token 与影子
 
+本节、命令表和冲突规则里的芯片数、坐标范围、LED 数和输出长度按 board=v01 写。board=v04 的差异见下文[板级 profile](#板级-profile)。
+
 - 通：`+c:x:y@tag`，c=0..1，x/y=0..7，tag=1..15，均为规范十进制。
 - 断：`-c:x:y`，不能带 tag；内部 SwitchOp 的 break tag=0。
 - `parse_switch_op` / `encode_switch_op` 使用冻结的 Crosspoint / SwitchOp；编码也接受具有相同属性的板级对象，不导入 board。
 - `commit_crc(tokens)` 是按帧 seq、帧内顺序拼接每个 `token + LF` 的 zlib 兼容 CRC32，返回整数。空序列为 0。
 
 复用 [影子格式](../docs/arch/shadow.md)：每芯片 128 bit，bit=x*8+y，字节序为 little-endian。CRC 输入为 chip0/chip1 各 16 字节位图，然后每芯片 128 个 tag 的 nibble 打包（偶索引为低 nibble），共 160 字节。x=8..15 保留且为零。`SW STATUS` 的 c0/c1 各为 32 hex。`SW TAGS` 仅传每芯片 **已使用的 64 个交叉点**，t0/t1 各 32 字节 / 64 hex；每字节低 nibble 仍对应偶数 bit，保留的后 64 个 tag 不传，但仍参与影子 CRC。
+
+## 板级 profile
+
+JumperFree mini（v0.4 板）的固件报告 `board=v04`。实现：`firmware/boards/v04-bringup-f103` 里加宽的 JF2 副本（实板运行的固件）；把它并回 C 核心的编译期 profile（`-DJF2_PROFILE_V04`）在分支 `feat/jf2-core-v04-profile`，尚未进入 main。两种 profile 的帧、命令、错误码、错误消息、事务和故障规则完全相同，只有下表的拓扑参数不同。
+
+| 项 | board=v01（默认） | board=v04 |
+| --- | --- | --- |
+| HELLO / INFO | `chips=2 board=v01` | `chips=7 board=v04` |
+| 芯片 c | 0..1 | 0..6：0..5 = U301..U306，6 = U307（服务芯片） |
+| X | 0..7，FLIPk，每片私有 | 0..15 = BUS0..15，所有芯片共用 |
+| Y | 0..7 = Y0..Y7 公共通道，两片共用 | 0..7，每个 Y 是一个 Clip（FLIP `8*c+y`），每片私有 |
+| 服务芯片限制 | 无 | c=6 只接受 y=6（TEST_SRC：PB8 经 1.5 kΩ，信号级约 3.3 V）和 y=7（SVC_GND）；其他 y 的通、断都返回 `BAD_ARG invalid switch operation` |
+| 冲突检查（SAFETY_SHORT） | `x_owner[(chip,x)]` + 共用的 `y_owner[y]` | 共用的 `x_owner[x]` + `y_owner[(chip,y)]` |
+| 影子 / CRC 输入 | 2×16 字节位图 + 2×64 字节 tag = 160 字节 | 7×16 字节位图 + 7×64 字节 tag = 560 字节 |
+| `SW STATUS` | `c0= c1=`，各 32 hex | `c0=` .. `c6=`，各 32 hex |
+| `SW TAGS` | `t0= t1=`，各 64 hex（只传 x 0..7 的 64 个 tag） | `t0=` .. `t6=`，各 128 hex（全部 128 个 tag）；整行 939 字节（含 LF） |
+| `LED BATCH` | n=0..16，clip=0..15 | n=0..48，clip=0..47（clip 号 = FLIP 号） |
+| 启动清 LED | 16 颗 | 48 颗 |
+| 响应缓冲 | 512 字节 | 1024 字节（请求帧仍最多 512 字节）；v04 主机必须接受最长 1024 字节的应答行 |
+
+两种 profile 都按下面的共同规则解析：
+
+- 操作 token 的每个数字都是规范十进制（`0` 或无前导零），按 profile 的上限检查。v01 的接受集合与旧的定长解析完全相同，共享向量不变。
+- 影子布局相同：每芯片 128 bit（CH446Q 的 16×8 全阵列），bit=x*8+y；先放全部芯片的位图，再放全部芯片的 tag 表。v01 的 x=8..15 保留且为零。
+- 冲突规则的含义相同：被多片芯片共用的线跨芯片检查，私有线按芯片检查。v04 中，一个 BUS 上的所有闭合点（含 U307 的 TEST_SRC / SVC_GND）必须同一个 tag；一个 Clip 接到多个 BUS 时也必须同一个 tag。
+- JF1 旧 LED 命令在两种 profile 下都只处理 clip 0..15，JF1 字节保持冻结。
+
+Python 主机按 HELLO 的 `board=` 选 geometry（`python/src/jumperfree/core/geometry.py`：`V01`、`V04`）。`jf2.py` 的开关 token 解析、`commit_crc`、`core/shadow.py`、`DeviceClient` 的 STATUS/TAGS 解析和 LED BATCH 范围、`MockDevice` 的应答与 SAFETY_SHORT 都按 geometry 工作；v04 应答行最长 1024 字节。共享向量仍只覆盖 v01。v04 空影子 CRC 为 `32c5f669`，与实板 `SW STATUS` 一致（2026-11-28）。
 
 ## 状态、会话、时间与故障
 
@@ -117,7 +147,7 @@ SAFE 下拒绝命令不修改影子；所有校验错误均不执行开关。模
 
 `Jf2Session(transport, clock=time.monotonic, frame_timeout=0.3, retries=2)`；clock 返回秒。`request(tokens, n_ops=None)` 用锁保证一个未决请求；成功 BEGIN 自动记 n_ops，直接 COMMIT 可显式传 0..256 的 n_ops。主机只保留当前 OPEN 事务的计数；成功 COMMIT（含 QUERY 恢复）、ABORT、HELLO、ALLOPEN 和 close 清理相应记录，COMMIT 恢复的 QUERY 确认 ABORTED 也清理；校验失败或结果仍 OPEN/未知时保留。已完成事务的 COMMIT 重放须显式传 n_ops，设备的四条结果缓存不变。每次发送（包括重试和 QUERY）前调用可选 reset_input。默认最多三次同字节发送，只在 TIMEOUT 重试。
 
-采用 JF2 专用扩展 `SerialTransport.readline_until(deadline, clock=...)`：直接调用 pyserial `read(1)`，每个字节前检查绝对 deadline 并重算 `timeout=min(原 timeout, 剩余秒数)`；遇到 LF、空读、513 字节或截止即返回，finally 恢复原 timeout。连续到达的非 LF 字节不能重新开始总计时。JF2 会话传入同一个注入 clock。reset_input 调 pyserial.reset_input_buffer；JF1 的 SerialTransport.readline、HostSession 和 MockTransport JF1 路径保持冻结。其他 Transport 可实现同一 deadline 扩展；回退 readline 的实现必须自行保证有界返回，会话无法中断任意阻塞的第三方调用。
+采用 JF2 专用扩展 `SerialTransport.readline_until(deadline, clock=..., max_len=512)`：轮询 pyserial `in_waiting`，读出已到达的字节（每次不超过剩余长度），无字节时睡 1 ms；遇到 LF、超过 `max_len`（v04 为 1024）或截止即返回，返回值可含 LF 之后的字节，由会话逐行组帧。它**不改写** pyserial 的 timeout：Windows 上每次改 timeout 都会重配串口并丢字节（v0.4 实测撕裂应答）。连续到达的非 LF 字节不能重新开始总计时。JF2 会话传入同一个注入 clock。reset_input 调 pyserial.reset_input_buffer；JF1 的 SerialTransport.readline、HostSession 和 MockTransport JF1 路径保持冻结。其他 Transport 可实现同一 deadline 扩展；回退 readline 的实现必须自行保证有界返回，会话无法中断任意阻塞的第三方调用。
 
 每次尝试从发送前计算总 deadline；本次尝试内累积分片（空读不清空），到 LF 后只解析一次，最大 512 字节含 LF。超长行按 BAD_FRAME 丢弃，并持续丢到该行 LF 才重新同步，不能把其中形似正确回复的后缀当新帧；其他坏行同样在完整 LF 边界后恢复。重试从清输入后的空组帧状态开始；若 Transport 没有 reset_input，则跨尝试/请求保留尚未同步的状态，旧行的剩余部分必须先丢到 LF。丢弃坏行、JF1、不同 cmd、id、seq、PING/LEASE/SELFTEST 参数、CFG key、LED count 和 HELLO nonce 的回复，持续读到截止。到点包括迟到的正确回复也 TIMEOUT。ERR 帧无 cmd/id（协议本身限制），不能做关联；清输入后收到的合法 JF2 ERR 直接 DEVICE_ERROR。输出来回无流水线/异步事件。短写为 SHORT_WRITE，OSError 为 TRANSPORT_ERROR，关闭后为 SESSION_CLOSED；close 幂等。
 

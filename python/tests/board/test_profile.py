@@ -16,7 +16,7 @@ class ProfileTests(unittest.TestCase):
     def test_packaged_topology_identity_and_detachment(self):
         profile = BoardProfile.load()
         self.assertEqual(profile.topology, v01_topology())
-        self.assertEqual(json.loads((DEFAULT_BOARD_DIR / 'topology.json').read_text()), v01_topology())
+        self.assertEqual(json.loads((DEFAULT_BOARD_DIR / 'topology.json').read_text(encoding='utf-8')), v01_topology())
         expected = hashlib.sha256(canonical_json({'topology': v01_topology(),
                                                   'known_bad_crosspoints': []}).encode()).hexdigest()[:16]
         self.assertEqual(profile.topology_id, expected)
@@ -38,7 +38,7 @@ class ProfileTests(unittest.TestCase):
             (directory / 'calibration.json').write_text(json.dumps({
                 'schema': 'jf.calib/1', 'measurements': [],
                 'known_bad_crosspoints': [[1, 2, 3], [0, 1, 2], [1, 2, 3]],
-            }))
+            }), encoding='utf-8')
             profile = BoardProfile.load(str(directory))
             self.assertEqual(profile.known_bad_crosspoints, (Xp(0, 1, 2), Xp(1, 2, 3)))
             self.assertNotEqual(profile.topology_id, BoardProfile.load().topology_id)
@@ -51,22 +51,22 @@ class ProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             shutil.copytree(DEFAULT_BOARD_DIR, directory, dirs_exist_ok=True)
-            original = (directory / 'board.toml').read_text()
+            original = (directory / 'board.toml').read_text(encoding='utf-8')
             for value in ('true', '"wrong"', '"bench"', '"hil"'):
-                (directory / 'board.toml').write_text(original.replace('false', value))
+                (directory / 'board.toml').write_text(original.replace('false', value), encoding='utf-8')
                 with self.assertRaises(PlanError) as caught:
                     BoardProfile.load(directory)
                 self.assertEqual(caught.exception.code, 'BOARD_INVALID')
             for evidence in ('/tmp/proof', '../proof', 'other/proof', 'docs/hw/missing'):
                 text = original.replace('verified = false', f'verified = "bench"\nevidence = "{evidence}"')
-                (directory / 'board.toml').write_text(text)
+                (directory / 'board.toml').write_text(text, encoding='utf-8')
                 with self.assertRaises(PlanError):
                     BoardProfile.load(directory)
             evidence = directory / 'docs/hw/proof.md'
             evidence.parent.mkdir(parents=True)
-            evidence.write_text('测试夹具证据，仅用于软件单测，不是出厂配置')
+            evidence.write_text('测试夹具证据，仅用于软件单测，不是出厂配置', encoding='utf-8')
             text = original.replace('verified = false', 'verified = "bench"\nevidence = "docs/hw/proof.md"')
-            (directory / 'board.toml').write_text(text)
+            (directory / 'board.toml').write_text(text, encoding='utf-8')
             profile = BoardProfile.load(directory)
             profile.require_verified()
             self.assertEqual(profile.unverified_sections, ())
@@ -80,7 +80,7 @@ class ProfileTests(unittest.TestCase):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
                 directory = Path(tmp)
                 shutil.copytree(DEFAULT_BOARD_DIR, directory, dirs_exist_ok=True)
-                (directory / filename).write_text(value)
+                (directory / filename).write_text(value, encoding='utf-8')
                 with self.assertRaises(PlanError) as caught:
                     BoardProfile.load(directory)
                 self.assertEqual(caught.exception.code, 'BOARD_INVALID')

@@ -1,0 +1,13 @@
+schema = "jf.pinmap/1"
+mcu = "STM32F103C8T6"
+status = "bench"
+[uart]
+status = "bench"
+bridge = "CH340N (USB-C)"
+format = "115200 8N1"
+[ch446q]
+status = "bench"
+chips = "U301..U306 clips (Y), U307 service; X0..X15 = BUS0..BUS15 shared"
+[led]
+status = "bench"
+data = "PB9 (TIM4_CH4 PWM + DMA), 48 x XL-1010, LED BATCH index = FLIP"

@@ -1,0 +1,476 @@
+{
+ "A1": {
+  "chip": "U303",
+  "col": 1,
+  "flip": 20,
+  "kind": "clip",
+  "led": 20,
+  "row": "A",
+  "y": 4
+ },
+ "A10": {
+  "chip": "U302",
+  "col": 10,
+  "flip": 13,
+  "kind": "clip",
+  "led": 13,
+  "row": "A",
+  "y": 5
+ },
+ "A11": {
+  "chip": "U302",
+  "col": 11,
+  "flip": 14,
+  "kind": "clip",
+  "led": 14,
+  "row": "A",
+  "y": 6
+ },
+ "A12": {
+  "chip": "U302",
+  "col": 12,
+  "flip": 15,
+  "kind": "clip",
+  "led": 15,
+  "row": "A",
+  "y": 7
+ },
+ "A13": {
+  "chip": "U302",
+  "col": 13,
+  "flip": 11,
+  "kind": "clip",
+  "led": 11,
+  "row": "A",
+  "y": 3
+ },
+ "A14": {
+  "chip": "U302",
+  "col": 14,
+  "flip": 10,
+  "kind": "clip",
+  "led": 10,
+  "row": "A",
+  "y": 2
+ },
+ "A15": {
+  "chip": "U302",
+  "col": 15,
+  "flip": 9,
+  "kind": "clip",
+  "led": 9,
+  "row": "A",
+  "y": 1
+ },
+ "A16": {
+  "chip": "U302",
+  "col": 16,
+  "flip": 8,
+  "kind": "clip",
+  "led": 8,
+  "row": "A",
+  "y": 0
+ },
+ "A17": {
+  "chip": "U301",
+  "col": 17,
+  "flip": 4,
+  "kind": "clip",
+  "led": 4,
+  "row": "A",
+  "y": 4
+ },
+ "A18": {
+  "chip": "U301",
+  "col": 18,
+  "flip": 5,
+  "kind": "clip",
+  "led": 5,
+  "row": "A",
+  "y": 5
+ },
+ "A19": {
+  "chip": "U301",
+  "col": 19,
+  "flip": 6,
+  "kind": "clip",
+  "led": 6,
+  "row": "A",
+  "y": 6
+ },
+ "A2": {
+  "chip": "U303",
+  "col": 2,
+  "flip": 21,
+  "kind": "clip",
+  "led": 21,
+  "row": "A",
+  "y": 5
+ },
+ "A20": {
+  "chip": "U301",
+  "col": 20,
+  "flip": 7,
+  "kind": "clip",
+  "led": 7,
+  "row": "A",
+  "y": 7
+ },
+ "A21": {
+  "chip": "U301",
+  "col": 21,
+  "flip": 3,
+  "kind": "clip",
+  "led": 3,
+  "row": "A",
+  "y": 3
+ },
+ "A22": {
+  "chip": "U301",
+  "col": 22,
+  "flip": 2,
+  "kind": "clip",
+  "led": 2,
+  "row": "A",
+  "y": 2
+ },
+ "A23": {
+  "chip": "U301",
+  "col": 23,
+  "flip": 1,
+  "kind": "clip",
+  "led": 1,
+  "row": "A",
+  "y": 1
+ },
+ "A24": {
+  "chip": "U301",
+  "col": 24,
+  "flip": 0,
+  "kind": "clip",
+  "led": 0,
+  "row": "A",
+  "y": 0
+ },
+ "A3": {
+  "chip": "U303",
+  "col": 3,
+  "flip": 22,
+  "kind": "clip",
+  "led": 22,
+  "row": "A",
+  "y": 6
+ },
+ "A4": {
+  "chip": "U303",
+  "col": 4,
+  "flip": 23,
+  "kind": "clip",
+  "led": 23,
+  "row": "A",
+  "y": 7
+ },
+ "A5": {
+  "chip": "U303",
+  "col": 5,
+  "flip": 19,
+  "kind": "clip",
+  "led": 19,
+  "row": "A",
+  "y": 3
+ },
+ "A6": {
+  "chip": "U303",
+  "col": 6,
+  "flip": 18,
+  "kind": "clip",
+  "led": 18,
+  "row": "A",
+  "y": 2
+ },
+ "A7": {
+  "chip": "U303",
+  "col": 7,
+  "flip": 17,
+  "kind": "clip",
+  "led": 17,
+  "row": "A",
+  "y": 1
+ },
+ "A8": {
+  "chip": "U303",
+  "col": 8,
+  "flip": 16,
+  "kind": "clip",
+  "led": 16,
+  "row": "A",
+  "y": 0
+ },
+ "A9": {
+  "chip": "U302",
+  "col": 9,
+  "flip": 12,
+  "kind": "clip",
+  "led": 12,
+  "row": "A",
+  "y": 4
+ },
+ "B1": {
+  "chip": "U306",
+  "col": 1,
+  "flip": 40,
+  "kind": "clip",
+  "led": 40,
+  "row": "B",
+  "y": 0
+ },
+ "B10": {
+  "chip": "U305",
+  "col": 10,
+  "flip": 33,
+  "kind": "clip",
+  "led": 33,
+  "row": "B",
+  "y": 1
+ },
+ "B11": {
+  "chip": "U305",
+  "col": 11,
+  "flip": 34,
+  "kind": "clip",
+  "led": 34,
+  "row": "B",
+  "y": 2
+ },
+ "B12": {
+  "chip": "U305",
+  "col": 12,
+  "flip": 35,
+  "kind": "clip",
+  "led": 35,
+  "row": "B",
+  "y": 3
+ },
+ "B13": {
+  "chip": "U305",
+  "col": 13,
+  "flip": 39,
+  "kind": "clip",
+  "led": 39,
+  "row": "B",
+  "y": 7
+ },
+ "B14": {
+  "chip": "U305",
+  "col": 14,
+  "flip": 38,
+  "kind": "clip",
+  "led": 38,
+  "row": "B",
+  "y": 6
+ },
+ "B15": {
+  "chip": "U305",
+  "col": 15,
+  "flip": 37,
+  "kind": "clip",
+  "led": 37,
+  "row": "B",
+  "y": 5
+ },
+ "B16": {
+  "chip": "U305",
+  "col": 16,
+  "flip": 36,
+  "kind": "clip",
+  "led": 36,
+  "row": "B",
+  "y": 4
+ },
+ "B17": {
+  "chip": "U304",
+  "col": 17,
+  "flip": 24,
+  "kind": "clip",
+  "led": 24,
+  "row": "B",
+  "y": 0
+ },
+ "B18": {
+  "chip": "U304",
+  "col": 18,
+  "flip": 25,
+  "kind": "clip",
+  "led": 25,
+  "row": "B",
+  "y": 1
+ },
+ "B19": {
+  "chip": "U304",
+  "col": 19,
+  "flip": 26,
+  "kind": "clip",
+  "led": 26,
+  "row": "B",
+  "y": 2
+ },
+ "B2": {
+  "chip": "U306",
+  "col": 2,
+  "flip": 41,
+  "kind": "clip",
+  "led": 41,
+  "row": "B",
+  "y": 1
+ },
+ "B20": {
+  "chip": "U304",
+  "col": 20,
+  "flip": 27,
+  "kind": "clip",
+  "led": 27,
+  "row": "B",
+  "y": 3
+ },
+ "B21": {
+  "chip": "U304",
+  "col": 21,
+  "flip": 31,
+  "kind": "clip",
+  "led": 31,
+  "row": "B",
+  "y": 7
+ },
+ "B22": {
+  "chip": "U304",
+  "col": 22,
+  "flip": 30,
+  "kind": "clip",
+  "led": 30,
+  "row": "B",
+  "y": 6
+ },
+ "B23": {
+  "chip": "U304",
+  "col": 23,
+  "flip": 29,
+  "kind": "clip",
+  "led": 29,
+  "row": "B",
+  "y": 5
+ },
+ "B24": {
+  "chip": "U304",
+  "col": 24,
+  "flip": 28,
+  "kind": "clip",
+  "led": 28,
+  "row": "B",
+  "y": 4
+ },
+ "B3": {
+  "chip": "U306",
+  "col": 3,
+  "flip": 42,
+  "kind": "clip",
+  "led": 42,
+  "row": "B",
+  "y": 2
+ },
+ "B4": {
+  "chip": "U306",
+  "col": 4,
+  "flip": 43,
+  "kind": "clip",
+  "led": 43,
+  "row": "B",
+  "y": 3
+ },
+ "B5": {
+  "chip": "U306",
+  "col": 5,
+  "flip": 47,
+  "kind": "clip",
+  "led": 47,
+  "row": "B",
+  "y": 7
+ },
+ "B6": {
+  "chip": "U306",
+  "col": 6,
+  "flip": 46,
+  "kind": "clip",
+  "led": 46,
+  "row": "B",
+  "y": 6
+ },
+ "B7": {
+  "chip": "U306",
+  "col": 7,
+  "flip": 45,
+  "kind": "clip",
+  "led": 45,
+  "row": "B",
+  "y": 5
+ },
+ "B8": {
+  "chip": "U306",
+  "col": 8,
+  "flip": 44,
+  "kind": "clip",
+  "led": 44,
+  "row": "B",
+  "y": 4
+ },
+ "B9": {
+  "chip": "U305",
+  "col": 9,
+  "flip": 32,
+  "kind": "clip",
+  "led": 32,
+  "row": "B",
+  "y": 0
+ },
+ "SVC_GND": {
+  "chip": "U307",
+  "kind": "service",
+  "note": "Ground through the service switch (R410 = 0 Ohm on this board). Small currents only: one switch carries at most 15 mA. Never tie it to a driven output.",
+  "y": 7
+ },
+ "TEST_SRC": {
+  "chip": "U307",
+  "kind": "service",
+  "note": "Weak 3.3 V test source: PB8 through 1.5 kOhm. Signal level only (pull-up), never a power supply. Must not share a net with SVC_GND.",
+  "y": 6
+ },
+ "~U307.Y0": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 0
+ },
+ "~U307.Y1": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 1
+ },
+ "~U307.Y2": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 2
+ },
+ "~U307.Y3": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 3
+ },
+ "~U307.Y4": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 4
+ },
+ "~U307.Y5": {
+  "chip": "U307",
+  "kind": "reserved",
+  "y": 5
+ }
+}

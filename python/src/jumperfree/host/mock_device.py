@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..core import JfError
+from ..core.geometry import V01, Geometry
 from ..core.shadow import Shadow, apply_ops, shadow_bytes
 from .errors import HostError
 from .jf2 import commit_crc, encode_jf2, frame_tokens, parse_switch_op, uint
@@ -40,8 +41,9 @@ class MockDevice(MockTransport):
     """Transport 与设备一体；clock 返回毫秒，seed 固定 boot 序列。"""
 
     def __init__(self, *, clock: Callable[[], float] | None = None, seed: int = 0,
-                 reset_cause: str = "por") -> None:
+                 reset_cause: str = "por", geometry: Geometry = V01) -> None:
         super().__init__()
+        self.geometry = geometry
         self._clock = clock if clock is not None else lambda: time.monotonic() * 1000
         self._offset = 0
         self._rng = random.Random(seed)
@@ -58,7 +60,7 @@ class MockDevice(MockTransport):
         self.reset_cause = cause
         self._boot_time = self._now()
         self.state = "SAFE"
-        self.shadow = Shadow()
+        self.shadow = Shadow.empty(self.geometry.chips)
         self.epoch = 0
         self.faults = (WDT_RESET if cause == "iwdg" else 0) | (HW_FAULT if self.hw_source else 0)
         self._hello = False
@@ -68,7 +70,7 @@ class MockDevice(MockTransport):
         self._results: list[_Result] = []
         self._interrupt = False
         self.execution_log: list[str] = []
-        self.leds = [(0, 0, 0)] * 16
+        self.leds = [(0, 0, 0)] * self.geometry.leds
         self._responses.clear()
         self._buffer = b""
 
@@ -85,7 +87,7 @@ class MockDevice(MockTransport):
 
     def _safe(self, fault: int = 0) -> None:
         self._abort()
-        self.shadow = Shadow()
+        self.shadow = Shadow.empty(self.geometry.chips)
         self.epoch += 1
         self.state = "SAFE"
         self.faults |= fault
@@ -145,7 +147,7 @@ class MockDevice(MockTransport):
         if not line.startswith(b"JF2") or re.match(rb"JF2 +(?:SET|CLR|CLRALL|STATUS)(?:[ \r\n]|$)", line):
             return super()._reply(line)
         try:
-            tokens = frame_tokens(line)
+            tokens = frame_tokens(line)  # requests stay at most 512 bytes on every board
             if tokens[0] != "JF2" or len(tokens) < 2:
                 raise HostError("BAD_FRAME", "invalid JF2 prefix or command")
             request = tokens[1:]
@@ -165,7 +167,8 @@ class MockDevice(MockTransport):
         raise HostError(code, message)
 
     def _info(self) -> str:
-        return (f"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=2 board=v01 boot={self.boot} "
+        return (f"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips={self.geometry.chips} "
+                f"board={self.geometry.board} boot={self.boot} "
                 f"epoch={self.epoch} state={self.state} reset={self.reset_cause}")
 
     def _dispatch(self, t: tuple[str, ...]) -> str:
@@ -192,11 +195,15 @@ class MockDevice(MockTransport):
                 self._safe()
                 return "SW ALLOPEN"
             if args[0] == "STATUS":
+                maps = " ".join(f"c{c}={self.shadow.bitmap_hex(c)}" for c in range(self.geometry.chips))
                 return (f"SW STATUS epoch={self.epoch} crc={self.shadow.shadow_crc():08x} "
-                        f"c0={self.shadow.bitmap_hex(0)} c1={self.shadow.bitmap_hex(1)} state={self.state}")
+                        f"{maps} state={self.state}")
             if args[0] == "TAGS":
-                packed = shadow_bytes(self.shadow)[32:]
-                return f"SW TAGS t0={packed[:32].hex()} t1={packed[64:96].hex()}"
+                chips = self.geometry.chips
+                packed = shadow_bytes(self.shadow)[16 * chips:]
+                sent = self.geometry.tags_x * 4  # bytes per chip carried by SW TAGS
+                return "SW TAGS " + " ".join(
+                    f"t{c}={packed[64 * c:64 * c + sent].hex()}" for c in range(chips))
         if cmd == "TXN" and args[0] == "QUERY":
             id_ = args[1]
             result = self._result(id_)
@@ -232,12 +239,12 @@ class MockDevice(MockTransport):
                 self._error("BUSY", "transaction open")
             count = uint(args[1])
             updates = args[2:]
-            if count > 16 or len(updates) != count:
+            if count > self.geometry.leds or len(updates) != count:
                 self._error("BAD_ARG", "invalid LED count")
             parsed = []
             for value in updates:
                 match = re.fullmatch(r"(0|[1-9][0-9]*):([0-9a-fA-F]{6})", value)
-                if match is None or len(match[1]) > 2 or int(match[1]) > 15:
+                if match is None or len(match[1]) > 2 or int(match[1]) >= self.geometry.leds:
                     self._error("BAD_ARG", "invalid LED update")
                 parsed.append((int(match[1]), tuple(bytes.fromhex(match[2]))))
             if len({clip for clip, _ in parsed}) != count:
@@ -294,7 +301,7 @@ class MockDevice(MockTransport):
         if sub == "ADD":
             seq, content = uint(args[2]), args[3:]
             for token in content:
-                parse_switch_op(token)
+                parse_switch_op(token, self.geometry)
             if seq < len(txn.frames):
                 if txn.frames[seq] != content:
                     self._error("TXN_SEQ_CONFLICT", "ADD content changed")
@@ -311,9 +318,9 @@ class MockDevice(MockTransport):
         if txn.base != self.epoch:
             self._error("EPOCH_MISMATCH", "base epoch differs")
         if (uint(args[2]) != len(txn.frames) or len(tokens) != txn.n_ops
-                or int(args[3], 16) != commit_crc(tokens)):
+                or int(args[3], 16) != commit_crc(tokens, self.geometry)):
             self._error("TXN_CRC", "frame count operation count or CRC differs")
-        ops = tuple(parse_switch_op(token) for token in tokens)
+        ops = tuple(parse_switch_op(token, self.geometry) for token in tokens)
         breaks, makes = tuple(op for op in ops if not op.on), tuple(op for op in ops if op.on)
         target = apply_ops(self.shadow, breaks, makes)
         self._safety(target)
@@ -331,15 +338,19 @@ class MockDevice(MockTransport):
         return f"TXN COMMIT {id_} " + " ".join(info)
 
     def _safety(self, target: Shadow) -> None:
+        """v01: X private per chip, Y shared. v04: X (BUS) shared, Y (clip) private per chip."""
+        shared_x = self.geometry.board != "v01"
         x_owner = {}
         y_owner = {}
-        for chip in range(2):
-            for x in range(8):
+        for chip in range(self.geometry.chips):
+            for x in range(self.geometry.x_lines):
                 for y in range(8):
                     bit = x * 8 + y
                     if target.closed[chip] & (1 << bit):
                         tag = target.tags[chip * 128 + bit]
-                        if x_owner.get((chip, x), tag) != tag or y_owner.get(y, tag) != tag:
+                        xk = x if shared_x else (chip, x)
+                        yk = (chip, y) if shared_x else y
+                        if x_owner.get(xk, tag) != tag or y_owner.get(yk, tag) != tag:
                             self._error("SAFETY_SHORT", "line has different tags")
-                        x_owner[chip, x] = tag
-                        y_owner[y] = tag
+                        x_owner[xk] = tag
+                        y_owner[yk] = tag

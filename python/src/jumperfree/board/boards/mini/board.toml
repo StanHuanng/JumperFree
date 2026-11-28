@@ -1,0 +1,17 @@
+schema = "jf.board/1"
+board_id = "mini"
+wire_board = "v04"
+name = "JumperFree mini"
+rev = "v0.4"
+
+# JumperFree mini = the v0.4 board (PCB v04, firmware board=v04).
+[sections.topology]
+verified = "bench"
+evidence = "docs/hw/bench-2026-11-22.md"
+[sections.pinmap]
+verified = "bench"
+evidence = "docs/hw/bench-2026-11-22.md"
+[sections.limits]
+verified = false
+[sections.calibration]
+verified = false

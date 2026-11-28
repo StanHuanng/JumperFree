@@ -1,8 +1,8 @@
 """Pure board-level compilation; hardware assumptions remain unverified."""
 
-from .led import GUIDE_PALETTE, RGB, LedPlan, LedPlanError, compile_led_plan, plan_guide
+from .led import GUIDE_PALETTE, RGB, TAG_PALETTE, LedPlan, LedPlanError, compile_led_plan, plan_guide
 
-__all__ = ["GUIDE_PALETTE", "RGB", "LedPlan", "LedPlanError", "compile_led_plan", "plan_guide"]
+__all__ = ["GUIDE_PALETTE", "TAG_PALETTE", "RGB", "LedPlan", "LedPlanError", "compile_led_plan", "plan_guide"]
 
 from .types import PlanError, SwitchOp, SwitchPlan, Xp
 from .profile import BoardProfile, Limits

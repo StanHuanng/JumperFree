@@ -1,136 +1,111 @@
-"""Bind these functions to one AgentSession for tool registration."""
+"""The six Agent tools. Each takes the session first; MCP binds it once per process.
+
+The Agent only names nets and nodes. It never picks crosspoints, BUS lines or
+switch registers: the router and the board firmware do that.
+"""
 
 from __future__ import annotations
 
+from typing import Any
+
 from .session import AgentSession
 
+INSTRUCTIONS = """\
+JumperFree Host: you control a jumper-free breadboard. You submit net intent only
+(a net name and its nodes). The Host routes it; the board firmware switches it.
+
+Fixed order for every change:
+1. plan_net_change (read-only) -> returns plan_id.
+2. Show the plan to the user (net, nodes) and wait for an explicit yes.
+3. guide_leds(plan_id): the board lights the clips. Tell the user, part by part,
+   which clips to use: row A = far side, row B = near side, column 1..24 from the left,
+   pin orientation, and the power order (board first, then the user circuit).
+4. Wait until the user says the parts are in place.
+5. execute_plan(plan_id).
+Never skip a step. Never invent node names: call describe_board. If a result has
+ok=false, quote error.code and stop; do not retry with changed arguments.
+SESSION_LOST means the board opened every switch (lease, fault, reset or emergency
+stop): tell the user and stop; the Host must be restarted.
+verified=false always: a successful execute is the board's report, not a
+measurement of real electrical connection.
+"""
 
 TOOL_DESCRIPTIONS = {
-    "create_net": (
-        "Create a named net on the session device. Require a nonblank name and an array "
-        "with at least two distinct exact profile node names. Never infer, trim, "
-        "replace or expand nodes. Mock results always have verified=false."
-    ),
-    "modify_net": (
-        "Replace the nodes of an existing named net on the session device, preserving "
-        "other nets. Require a nonblank name and at least two distinct exact "
-        "profile nodes. Do not guess ambiguous nodes or rewrite user intent."
-    ),
-    "delete_net": "Delete only the net with this exact nonblank name on the session device.",
-    "plan_net_change": (
-        "Read-only dry run of create/modify/delete on a copy of confirmed intent: "
-        "routes and compiles, returns candidate router, break/make counts and occupied "
-        "nodes. No device I/O; never changes netlist, epoch or device. A plan is a "
-        "software result, not an applied connection. Errors match the direct tool. "
-        "verified is always false."
-    ),
-    "guide_leds": (
-        "Light the Clip LEDs with one LED BATCH: each net gets one color, all other clips "
-        "are sent black (n is always 16). With no arguments it shows the confirmed netlist; "
-        "with action/name/nodes (as plan_net_change) it shows the netlist that change would "
-        "produce, before it is executed (the change itself is not applied). Needs a confirmed "
-        "state and an ARMED device; SAFE_MODE is returned as is, never auto-armed. No "
-        "switch change. verified is always false."
-    ),
-    "all_open": (
-        "Open every switch on the device (SW ALLOPEN). Works in any device state but is "
-        "not a recovery tool: afterwards the session state is unconfirmed (netlist=null) "
-        "and all writes, plans and guides are refused until a new session is created."
-    ),
+    "describe_board": (
+        "Read-only. Connect to the board if needed and return its name, every node name "
+        "(clips with row A/B and column, service nodes with their limits), capacity and "
+        "electrical limits. Call this first; use only node names it returns."),
     "get_state": (
-        "Query session intent without device I/O. Only netlist is confirmed "
-        "intent; router is candidate/history, never device confirmation. After "
-        "failed apply, netlist is null and state is unconfirmed. Hardware is unverified."
-    ),
+        "Read-only, no device I/O. Return the confirmed netlist of this session. After a "
+        "failed change the state is unconfirmed (netlist=null)."),
+    "plan_net_change": (
+        "Read-only dry run of create/modify/delete for one net: routes it and returns the "
+        "switch changes, affected nets and a plan_id. Changes nothing on the board. Show the "
+        "plan to the user and get a yes before guide_leds."),
+    "guide_leds": (
+        "Light the board LEDs. With plan_id: show the netlist that plan would produce (one "
+        "color per net, other clips dark) and return each net's clips with row and column, "
+        "plus added_nodes the user must plug. Without plan_id: show the confirmed netlist. "
+        "Never changes a switch."),
+    "execute_plan": (
+        "Apply a plan: only a plan_id from plan_net_change for the current state that was "
+        "shown with guide_leds. Call it only after the user said the parts are in place. "
+        "Errors: PLAN_UNKNOWN, PLAN_STALE (state changed, plan again), PLAN_NOT_GUIDED."),
+    "all_open": (
+        "Open every switch on the board and turn the LEDs off (the user's 'disconnect "
+        "everything'). The session continues with an empty netlist."),
 }
 
 
-def _input_schema(*, nodes: bool = False, name: bool = True) -> dict[str, object]:
-    properties: dict[str, object] = {}
-    if name:
-        properties["name"] = {
-            "type": "string", "minLength": 1, "pattern": r"\S",
-            "description": "Exact net ID; must contain a non-whitespace character.",
-        }
-    if nodes:
-        properties["nodes"] = {
-            "type": "array", "minItems": 2, "items": {"type": "string"},
-            "description": (
-                "At least two distinct, case-sensitive node names from the session's "
-                "BoardProfile. Unknown or ambiguous names are errors; never substitute."
-            ),
-        }
-    return {"type": "object", "properties": properties,
-            "required": list(properties), "additionalProperties": False}
+def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
+    return {"type": "object", "properties": properties, "required": required,
+            "additionalProperties": False}
 
 
-def _plan_schema() -> dict[str, object]:
-    schema = _input_schema(nodes=True)
-    schema["properties"] = {"action": {
-        "type": "string", "enum": ["create", "modify", "delete"],
-        "description": "Which change to plan; nodes is ignored for delete and may be omitted.",
-    }, **schema["properties"]}
-    schema["required"] = ["action", "name"]
-    return schema
-
-
-def _guide_schema() -> dict[str, object]:
-    schema = _plan_schema()
-    schema["required"] = []  # action and name go together; a lone one is BAD_ARG/INVALID_NET_ID
-    schema["properties"]["action"] = {**schema["properties"]["action"], "description": (
-        "Optional. With name (and nodes unless delete), previews that planned change's LEDs.")}
-    return schema
-
+_PLAN_ID = {"type": "string", "pattern": "^p-[0-9a-f]{10}$",
+            "description": "plan_id returned by plan_net_change."}
 
 TOOL_SCHEMAS = {
     name: {"name": name, "description": TOOL_DESCRIPTIONS[name], "inputSchema": schema}
     for name, schema in (
-        ("create_net", _input_schema(nodes=True)),
-        ("modify_net", _input_schema(nodes=True)),
-        ("delete_net", _input_schema()),
-        ("plan_net_change", _plan_schema()),
-        ("guide_leds", _guide_schema()),
-        ("all_open", _input_schema(name=False)),
-        ("get_state", _input_schema(name=False)),
+        ("describe_board", _schema({}, [])),
+        ("get_state", _schema({}, [])),
+        ("plan_net_change", _schema({
+            "action": {"type": "string", "enum": ["create", "modify", "delete"],
+                       "description": "create a new net, modify (replace the nodes of) a net, or delete it."},
+            "name": {"type": "string", "minLength": 1, "pattern": r"\S",
+                     "description": "Net name, e.g. SDA or LED1. Use the user's name for it."},
+            "nodes": {"type": "array", "minItems": 2, "items": {"type": "string"},
+                      "description": ("Exact node names from describe_board (e.g. A3, B12, SVC_GND). "
+                                      "Required for create and modify; omit for delete.")},
+        }, ["action", "name"])),
+        ("guide_leds", _schema({"plan_id": _PLAN_ID}, [])),
+        ("execute_plan", _schema({"plan_id": _PLAN_ID}, ["plan_id"])),
+        ("all_open", _schema({}, [])),
     )
 }
 
 
-def create_net(session: AgentSession, name: str, nodes: list[str]) -> dict[str, object]:
-    """Create name as ControlService's net_id; do not change supplied nodes."""
-    return session._invoke("create", name, nodes)
+def describe_board(session: AgentSession) -> dict[str, Any]:
+    return session.describe_board()
 
 
-def modify_net(session: AgentSession, name: str, nodes: list[str]) -> dict[str, object]:
-    """Replace one net through a single ControlService modify operation."""
-    return session._invoke("modify", name, nodes)
-
-
-def delete_net(session: AgentSession, name: str) -> dict[str, object]:
-    """Delete exactly name through ControlService."""
-    return session._invoke("delete", name)
+def get_state(session: AgentSession) -> dict[str, Any]:
+    return session.get_state()
 
 
 def plan_net_change(session: AgentSession, action: str, name: str,
-                    nodes: list[str] | None = None) -> dict[str, object]:
-    """Dry-run create/modify/delete; nodes is required for create and modify only."""
-    return session._invoke("plan", action, name, nodes)
+                    nodes: list[str] | None = None) -> dict[str, Any]:
+    return session.plan(action, name, nodes)
 
 
-def get_state(session: AgentSession) -> dict[str, object]:
-    """Return confirmed intent or the service's unconfirmed-state error."""
-    return session._invoke("query")
+def guide_leds(session: AgentSession, plan_id: str | None = None) -> dict[str, Any]:
+    return session.guide(plan_id)
 
 
-def guide_leds(session: AgentSession, action: str | None = None, name: str | None = None,
-               nodes: list[str] | None = None) -> dict[str, object]:
-    """Send one LED BATCH for the confirmed netlist, or for a planned change if
-    action/name are given; no arming, no switch change."""
-    if action is None and name is None and nodes is None:
-        return session._invoke("guide_leds")
-    return session._invoke("guide_leds", action, name, nodes)
+def execute_plan(session: AgentSession, plan_id: str) -> dict[str, Any]:
+    return session.execute(plan_id)
 
 
-def all_open(session: AgentSession) -> dict[str, object]:
-    """Open all switches; leaves the session unconfirmed and write-refusing."""
-    return session._invoke("all_open")
+def all_open(session: AgentSession) -> dict[str, Any]:
+    return session.all_open()

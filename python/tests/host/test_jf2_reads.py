@@ -12,19 +12,22 @@ from tests.host.test_jf2_session import Clock, Scripted
 
 
 class TrickleSerial(io.RawIOBase):
-    """Each byte arrives before its timeout, without any wall-clock wait."""
+    """One byte is waiting at a time; each read takes 10 ms of fake time."""
 
     timeout = 1.0
 
     def __init__(self, clock):
         self.clock = clock
-        self.timeouts = []
+        self.reads = 0
+
+    @property
+    def in_waiting(self):
+        return 1
 
     def read(self, size=1):
         self.read_size = size
-        self.timeouts.append(self.timeout)
-        # A real monotonic clock has finite resolution and keeps advancing.
-        self.clock.now += min(0.2, max(1e-9, self.timeout / 2))
+        self.reads += 1
+        self.clock.now += 0.01
         return b"x"
 
     def write(self, data):
@@ -44,25 +47,28 @@ class ReadPathTests(unittest.TestCase):
             Jf2Session(transport, clock=clock, frame_timeout=.3, retries=0).request(['INFO'])
         self.assertEqual(raised.exception.code, 'TIMEOUT')
         self.assertAlmostEqual(clock.now, .3)
-        self.assertLess(len(connection.timeouts), 100)
+        self.assertLessEqual(connection.reads, 31)
         self.assertEqual(connection.read_size, 1)
-        self.assertEqual(connection.timeout, 1)
-        self.assertTrue(all(0 < timeout <= .3 for timeout in connection.timeouts))
-        self.assertLess(connection.timeouts[-1], connection.timeouts[0])
+        self.assertEqual(connection.timeout, 1)  # never rewritten (Windows drops bytes)
 
-    def test_serial_empty_reads_size_bound_expiry_and_errors_restore_timeout(self):
+    def test_serial_polls_without_touching_timeout_and_bounds_size(self):
         clock = Clock()
-        connection = mock.Mock(timeout=.005)
+        connection = mock.Mock(timeout=.005, in_waiting=600)
         transport = SerialTransport.__new__(SerialTransport)
         transport._serial = connection
-        connection.read.side_effect = [b'x'] * 513 + [b'']
+        transport._sleep = lambda seconds: setattr(clock, 'now', clock.now + seconds)
+        connection.read.side_effect = lambda size: b'x' * size
         self.assertEqual(transport.readline_until(.3, clock=clock), b'x' * 513)
-        self.assertEqual(connection.read.call_count, 513)
-        self.assertEqual(transport.readline_until(.3, clock=clock), b'')
-        self.assertEqual(connection.timeout, .005)
+        self.assertEqual(transport.readline_until(.3, clock=clock, max_len=1024), b'x' * 600 + b'x' * 425)
+        connection.in_waiting = 0
         before = connection.read.call_count
-        self.assertEqual(transport.readline_until(0, clock=clock), b'')
+        clock.now = 0
+        self.assertEqual(transport.readline_until(.3, clock=clock), b'')
+        self.assertAlmostEqual(clock.now, .3, places=6)
         self.assertEqual(connection.read.call_count, before)
+        self.assertEqual(connection.timeout, .005)
+        self.assertEqual(transport.readline_until(0, clock=clock), b'')
+        connection.in_waiting = 1
         for failure, code in [(OverflowError('too large'), 'INVALID_SERIAL_CONFIG'),
                               (OSError('lost'), 'TRANSPORT_ERROR')]:
             connection.read.side_effect = failure
