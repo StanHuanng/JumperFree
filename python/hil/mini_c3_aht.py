@@ -20,7 +20,9 @@ from pathlib import Path
 
 import serial
 
-NETS = [("GND", ["A2", "A16"]), ("3V3", ["A3", "A19"]), ("SCL", ["B2", "A17"]), ("SDA", ["B1", "A18"])]
+# (name, nodes, current_ma): the supply pair is declared at 40 mA -> 3 BUS in parallel each.
+NETS = [("GND", ["A2", "A16"], 40), ("3V3", ["A3", "A19"], 40), ("SCL", ["B2", "A17"], None),
+        ("SDA", ["B1", "A18"], None)]
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -54,8 +56,14 @@ class C3:
         return set(line.split()[1:]) if line else set()
 
     def stat(self) -> dict:
+        """jf-c3-env 0.4 prints STAT {json}; later C3 firmware prints STAT k=v ..."""
         line = self.ask("stat", "STAT ")
-        return json.loads(line[5:]) if line else {}
+        if not line:
+            return {}
+        body = line[5:].strip()
+        if body.startswith("{"):
+            return json.loads(body)
+        return dict(token.split("=", 1) for token in body.split() if "=" in token)
 
 
 class Mcp:
@@ -76,9 +84,12 @@ class Mcp:
         reply = self.rpc("tools/call", {"name": tool, "arguments": arguments})
         return reply["result"]["structuredContent"]
 
-    def change(self, action: str, name: str, nodes: list[str] | None = None) -> dict:
-        plan = self.tool("plan_net_change", action=action, name=name,
-                         **({} if nodes is None else {"nodes": nodes}))
+    def change(self, action: str, name: str, nodes: list[str] | None = None,
+               current_ma: int | None = None) -> dict:
+        extra = {} if nodes is None else {"nodes": nodes}
+        if current_ma is not None:
+            extra["current_ma"] = current_ma
+        plan = self.tool("plan_net_change", action=action, name=name, **extra)
         if not plan["ok"]:
             return plan
         guide = self.tool("guide_leds", plan_id=plan["plan_id"])
@@ -139,19 +150,40 @@ def main() -> int:
     plan = host.tool("plan_net_change", action="create", name="GND", nodes=["A2", "A16"])
     check("execute without guide refused", host.tool("execute_plan", plan_id=plan["plan_id"])["error"]["code"]
           == "PLAN_NOT_GUIDED")
+    # Measurement before routing: the C3's 3V3 pin through a temporary path, an open clip.
+    t0 = time.monotonic()
+    pin = host.tool("measure_voltage", node="A3")
+    check("measure C3 3V3 pin A3 (temporary path) ~3.3 V", pin.get("ok") and 3.0 <= pin["volts"] <= 3.5
+          and pin["path"] == "temporary", f"{pin.get('volts')} V path={pin.get('path')} "
+          f"{time.monotonic() - t0:.2f} s")
+    open_clip = host.tool("measure_voltage", node="B20")
+    check("open clip B20 reads ~2.5 V with a hint", open_clip.get("ok") and "hint" in open_clip,
+          f"{open_clip.get('volts')} V")
     times = []
-    for name, nodes in NETS:
+    for name, nodes, current in NETS:
         t0 = time.monotonic()
-        result = host.change("create", name, nodes)
+        result = host.change("create", name, nodes, current)
         times.append(time.monotonic() - t0)
-        check(f"create {name} {nodes}", result["ok"], "" if result["ok"] else str(result["error"]))
+        check(f"create {name} {nodes} current_ma={current}", result["ok"],
+              "" if result["ok"] else str(result["error"]))
+    nets = {net["net"]: net for net in host.tool("get_state")["netlist"]["nets"]}
+    check("3V3 and GND use 3 BUS in parallel", nets["3V3"].get("parallel") == 3 and nets["GND"].get("parallel") == 3,
+          f"3V3 {len(nets['3V3']['crosspoints'])} switches, GND {len(nets['GND']['crosspoints'])} switches")
     found = wait_scan(c3, True)
     check("C3 sees AHT 0x38 through the matrix", "38" in found, f"scan={sorted(found)} "
           f"plan+guide+execute {min(times):.2f}..{max(times):.2f} s")
     time.sleep(2.5)
     stat = c3.stat()
-    check("AHT reading plausible", stat.get("t") is not None and stat.get("rh") is not None,
-          f"t={stat.get('t')} rh={stat.get('rh')}")
+    check("AHT reading plausible", stat.get("t") is not None and stat.get("rh") is not None
+          and str(stat.get("aht", "1")) != "0", f"t={stat.get('t')} rh={stat.get('rh')} aht={stat.get('aht')}")
+    vcc = host.tool("measure_voltage", node="A19")
+    gnd = host.tool("measure_voltage", node="A16")
+    check("AHT VCC A19 ~3.3 V on the 3V3 net", vcc.get("ok") and 3.0 <= vcc["volts"] <= 3.5
+          and vcc["net"] == "3V3" and vcc["path"] == "net", f"{vcc.get('volts')} V")
+    check("AHT GND A16 ~0 V", gnd.get("ok") and abs(gnd["volts"]) <= 0.2, f"{gnd.get('volts')} V")
+    sda = host.tool("measure_voltage", node="A18", window_ms=500)
+    check("SDA idles high (window 500 ms)", sda.get("ok") and sda["max_volts"] >= 2.8,
+          f"mean {sda.get('volts')} min {sda.get('min_volts')} max {sda.get('max_volts')} n={sda.get('samples')}")
 
     # T3: one owner.
     second = Mcp(cmd + ["--port", args.jf] if "--port" not in cmd else cmd)
@@ -163,6 +195,7 @@ def main() -> int:
     check("delete SDA", host.change("delete", "SDA")["ok"])
     check("C3 lost the AHT after delete", "38" not in wait_scan(c3, False))
     check("create SDA again", host.change("create", "SDA", ["B1", "A18"])["ok"])
+    check("state version unchanged by measuring", host.tool("measure_voltage", node="A19")["ok"])
     check("C3 sees AHT again", "38" in wait_scan(c3, True))
 
     # T5: lease held by heartbeat for 12 s of idle.
@@ -181,8 +214,8 @@ def main() -> int:
 
     # T7: killed Host -> lease opens everything; next Host clears the latch.
     host = Mcp(cmd)
-    for name, nodes in NETS:
-        host.change("create", name, nodes)
+    for name, nodes, current in NETS:
+        host.change("create", name, nodes, current)
     check("routed again before kill", "38" in wait_scan(c3, True))
     host.kill()
     time.sleep(6.5)

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from jumperfree.agent import INSTRUCTIONS, TOOL_SCHEMAS, AgentSession, mock_opener
 from jumperfree.agent.mcp_server import McpServer, serve
-from jumperfree.core.geometry import V04
+from jumperfree.core.geometry import MINI
 from jumperfree.host.mock_device import MockDevice
 
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -18,7 +18,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
-        self.device = MockDevice(clock=lambda: 0, geometry=V04)
+        self.device = MockDevice(clock=lambda: 0, geometry=MINI)
         self.session = AgentSession(mock_opener("mini", self.device), heartbeat_s=None)
         self.addCleanup(self.session.close)
         self.server = McpServer(self.session)
@@ -44,13 +44,15 @@ class ServerTests(unittest.TestCase):
         self.assertIsNone(self.server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         self.assertEqual([t["name"] for t in listed["result"]["tools"]], [
-            "describe_board", "get_state", "plan_net_change", "guide_leds", "execute_plan", "all_open"])
+            "describe_board", "get_state", "plan_net_change", "guide_leds", "execute_plan", "all_open",
+            "measure_voltage"])
         self.assertEqual(self.device.epoch, 0)  # listing never touches the board
 
     def test_no_tool_exposes_crosspoints_or_registers(self):
         for schema in TOOL_SCHEMAS.values():
             props = set(schema["inputSchema"]["properties"])
-            self.assertLessEqual(props, {"action", "name", "nodes", "plan_id"})
+            # Net intent, plan ids, a load current and a node to measure: never a BUS or crosspoint.
+            self.assertLessEqual(props, {"action", "name", "nodes", "plan_id", "current_ma", "node", "window_ms"})
             self.assertFalse(schema["inputSchema"]["additionalProperties"])
 
     def test_bad_requests_are_protocol_errors(self):

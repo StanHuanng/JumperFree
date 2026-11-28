@@ -4,7 +4,7 @@ import unittest
 
 from jumperfree.agent import AgentSession, mock_opener, open_session
 from jumperfree.agent.ports import open_board
-from jumperfree.core.geometry import V01, V04
+from jumperfree.core.geometry import V01, MINI
 from jumperfree.host import HostError
 from jumperfree.host.mock_device import MockDevice
 
@@ -18,7 +18,7 @@ class Clock:
 
 
 def session_on(device=None, board="mini", **kwargs):
-    device = device or MockDevice(clock=lambda: 0, geometry=V04 if board == "mini" else V01)
+    device = device or MockDevice(clock=lambda: 0, geometry=MINI if board == "mini" else V01)
     kwargs.setdefault("heartbeat_s", None)
     return AgentSession(mock_opener(board, device), **kwargs), device
 
@@ -133,12 +133,12 @@ class FlowTests(unittest.TestCase):
 
 class StartupTests(unittest.TestCase):
     def test_stale_switches_and_latched_lease_fault_are_cleared_at_start(self):
-        device = MockDevice(clock=lambda: 0, geometry=V04)
+        device = MockDevice(clock=lambda: 0, geometry=MINI)
         device.write(b"JF2 HELLO 2 1\n")
         device.write(b"JF2 TXN BEGIN 1 0 1\n")
         device.write(b"JF2 TXN ADD 1 0 +0:0:0@1\n")
         from jumperfree.host.jf2 import commit_crc
-        device.write(f"JF2 TXN COMMIT 1 1 {commit_crc(['+0:0:0@1'], V04):08x}\n".encode())
+        device.write(f"JF2 TXN COMMIT 1 1 {commit_crc(['+0:0:0@1'], MINI):08x}\n".encode())
         device.faults |= 0x1  # a previous Host died and its lease expired
         session, _ = session_on(device)
         self.addCleanup(session.close)
@@ -178,7 +178,7 @@ class LeaseTests(unittest.TestCase):
         for scenario in ("lease", "reboot", "gone"):
             with self.subTest(scenario=scenario):
                 clock = Clock()
-                device = MockDevice(clock=clock, geometry=V04)
+                device = MockDevice(clock=clock, geometry=MINI)
                 session, _ = session_on(device)
                 plan = session.plan("create", "SDA", ["A3", "B5"])
                 session.guide(plan["plan_id"])
@@ -209,7 +209,7 @@ class LeaseTests(unittest.TestCase):
 
     def test_lease_keeps_switches_while_heartbeat_runs(self):
         clock = Clock()
-        device = MockDevice(clock=clock, geometry=V04)
+        device = MockDevice(clock=clock, geometry=MINI)
         session, _ = session_on(device)
         self.addCleanup(session.close)
         plan = session.plan("create", "SDA", ["A3", "B5"])
@@ -222,7 +222,7 @@ class LeaseTests(unittest.TestCase):
         self.assertTrue(any(device.shadow.closed))
 
     def test_real_heartbeat_thread_pings_under_the_lock(self):
-        device = MockDevice(geometry=V04)
+        device = MockDevice(geometry=MINI)
         session = AgentSession(mock_opener("mini", device), heartbeat_s=0.02)
         self.addCleanup(session.close)
         self.assertTrue(session.describe_board()["ok"])
@@ -239,13 +239,13 @@ class PortTests(unittest.TestCase):
         def factory(name):
             if name == "COM5":
                 raise HostError("PORT_BUSY", "busy")
-            device = MockDevice(clock=lambda: 0, geometry=V04)
+            device = MockDevice(clock=lambda: 0, geometry=MINI)
             if name == "COM6":
                 device.write = lambda data: len(data)  # silent foreign device
             opened[name] = device
             return device
         transport, name, info = open_board(None, serial_factory=factory, ports=lambda: ["COM5", "COM6", "COM7"])
-        self.assertEqual((name, info["board"]), ("COM7", "v04"))
+        self.assertEqual((name, info["board"]), ("COM7", "mini"))
         self.assertTrue(opened["COM6"].closed)
         with self.assertRaises(HostError) as raised:
             open_board(None, serial_factory=factory, ports=lambda: ["COM5"])

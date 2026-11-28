@@ -27,7 +27,7 @@ exit loses the session; there is no database.
    reply. Other USB serial devices are never written to. A port held by another
    program returns `PORT_BUSY`; no board returns `DEVICE_NOT_FOUND`. Until the
    first connect succeeds, each tool call tries again.
-2. **Board detection.** `INFO board=` selects the packaged profile: `v04` →
+2. **Board detection.** `INFO board=` selects the packaged profile: `mini` →
    JumperFree mini (`boards/mini`), `v01` → v0.1 (`boards/v01`). `--board` makes a
    different board an error (`BOARD_MISMATCH`).
 3. **Clean start.** Latched faults (for example `LEASE_EXPIRED` from a Host that died)
@@ -51,17 +51,18 @@ exit loses the session; there is no database.
 | --- | --- | --- | --- |
 | `describe_board` | – | connect only | board name, clips (row, column), service nodes and limits, capacity, `startup_notes` |
 | `get_state` | – | none | confirmed netlist, or `STATE_UNCONFIRMED` after a failed change |
-| `plan_net_change` | `action` create/modify/delete, `name`, `nodes` (not for delete) | none | router candidate, `plan` summary (breaks, makes, disturbed nets), `plan_id` |
+| `plan_net_change` | `action` create/modify/delete, `name`, `nodes` (not for delete), optional `current_ma` 1..100 (create/modify) | none | router candidate, `plan` summary (breaks, makes, disturbed nets; for create/modify `current_ma`, `parallel_paths`, `path_ohm_typical`, `max_ma`), `plan_id` |
 | `guide_leds` | optional `plan_id` | one `LED BATCH` | planned (with `plan_id`) or confirmed netlist on the LEDs; `led.nets[].nodes[].where`, `added_nodes`, `removed_nodes` |
 | `execute_plan` | `plan_id` | one JF2 transaction | confirmed netlist and the device's apply report |
 | `all_open` | – | `SW ALLOPEN`, `HELLO`, `LEASE` | empty netlist; the session continues |
+| `measure_voltage` | `node` (a clip), optional `window_ms` 0..1000 | one `JF2 MEAS` | `volts`, `min_volts`, `max_volts`, `samples`, `net` (or null), `path` net/temporary, `note`, `hint` near 2.5 V |
 
 Every result is a JSON object with `ok`, `operation`, `netlist`, `router`, `error`,
 `apply`, `device` and `verified=false`. Error codes pass through unchanged.
 
 ### Order is enforced by the Host
 
-- `plan_net_change` issues `plan_id` = hash of (action, name, nodes, state version).
+- `plan_net_change` issues `plan_id` = hash of (action, name, nodes, current_ma, state version).
 - `guide_leds(plan_id)` marks that plan as shown.
 - `execute_plan(plan_id)` runs only a known plan of the current state version that
   was shown: otherwise `PLAN_UNKNOWN`, `PLAN_STALE` or `PLAN_NOT_GUIDED`, with no
@@ -77,9 +78,34 @@ Every result is a JSON object with `ok`, `operation`, `netlist`, `router`, `erro
   A net with both is refused (`SERVICE_SHORT`).
 - U307 Y0..Y5 carry measurement paths. They are internal nodes `~U307.Yn`: the router
   never uses them and a net that names them is refused (`NODE_RESERVED`).
-- One net = one BUS (X line shared by all chips) and one JF2 tag; each clip in the net
-  closes one switch on its own chip. At most 15 nets (tags 1..15).
+- A signal net = one BUS (X line shared by all chips) and one JF2 tag; each clip in the
+  net closes one switch on its own chip. At most 15 nets (tags 1..15).
 - LED color = tag, so a net keeps its color while other nets change.
+
+### Supply and ground nets: `current_ma`
+
+The Agent gives the load's continuous current, never a BUS count. The Host routes
+`n = ceil(current_ma / 15)` BUS paths in parallel: every clip of the net closes one
+switch on each of the `n` BUSes, all with the net's tag (the firmware allows one tag
+on several BUSes). One path is about 100 Ohm (two switches; bench: 108 Ohm), `n` paths about 100/n Ohm.
+
+- `current_ma` 1..100; more is `CURRENT_TOO_HIGH`. The declared currents of all nets
+  together are limited to 100 mA (a supply net and its ground return both count).
+- Not enough free BUSes is `NO_FREE_PATH` (`needed`, `found`).
+- `modify` takes the full new spec: without `current_ma` the net goes back to one BUS.
+- The netlist shows `parallel` and `current_ma` on such nets.
+- Bench evidence (2026-11-23, before this tool existed): an OLED on 3.3 V got 2.2 V
+  through one BUS and 2.72 V through three BUSes in parallel.
+
+### Measurement: `measure_voltage`
+
+`JF2 MEAS` reads one clip through U307 Y4 → MEAS_A → PA0 (about 1 MOhm, range about
+−7.4..+5.5 V, not calibrated). A clip in a net is read on its own BUS; a clip in no net
+gets a free BUS (BUS15 first) and one temporary switch. The firmware restores every
+switch before it answers, so the netlist, epoch and plans stay valid. An unconnected
+clip reads about 2.5 V; the result then carries a `hint`. `window_ms > 0` adds min/max
+over that time (activity on a signal line, not a waveform). Only clips can be measured
+(`NODE_NOT_MEASURABLE`); boards without the front end return `UNSUPPORTED`.
 
 ## MCP server
 
@@ -91,22 +117,22 @@ the result carries `instructions` with the fixed order), `ping`, `tools/list`,
 (missing or extra keys → `-32602`). `tools/call` returns the tool dict as
 `structuredContent` and as JSON text; `isError = not ok`. Logs go to stderr.
 
-`--mock` runs an in-memory JumperFree mini (`MockDevice` with the v04 geometry) for
+`--mock` runs an in-memory JumperFree mini (`MockDevice` with the mini geometry) for
 tests and demos without hardware.
 
 ## Limits
 
-- `verified=false` always: an executed plan is the firmware's report, not a
-  measurement of electrical contact.
-- Matrix paths are about 100 Ohm; at most 15 mA per switch; signals within VEE..VDD.
-- One BUS per net: power nets for larger loads (parallel BUS) are not supported yet.
-- No measurement tools yet (the firmware `meas`/`probe`/`scope` commands are console
-  commands, not JF2).
+- `verified=false` always: an executed plan is the firmware's report. A
+  `measure_voltage` reading is a real voltage on one clip, but it does not prove every
+  contact of a net.
+- At most 15 mA per switch and 100 mA in total; signals within VEE..VDD.
+- The firmware console commands `probe`, `scope`, `la`, `lac` and `find` are not JF2.
 
 ## Hardware check
 
 `python/hil/mini_c3_aht.py` drives the installed `jumperfree-mcp` like an Agent on a
 real JumperFree mini with an ESP32-C3 (jf-c3-env firmware) and an AHT20 on the
 board. The C3's I2C scan is independent evidence that the matrix really connects
-the sensor. It covers routing, `PORT_BUSY`, delete/re-create, idle lease, normal
-exit and a killed Host (lease expiry).
+the sensor. It covers routing (3V3 and GND as parallel nets with `current_ma`),
+`measure_voltage` on the supply nets and on an open clip, `PORT_BUSY`,
+delete/re-create, idle lease, normal exit and a killed Host (lease expiry).

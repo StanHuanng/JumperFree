@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,27 @@ from ..host import ApplyResult, DeviceClient, HostError
 from ..routing.steiner import (
     crossbar_create_net, crossbar_delete_net, crossbar_init_state, crossbar_query,
 )
+
+
+# CH446Q limits (project hardware constraints): at most 15 mA continuous per switch,
+# at most 100 mA through the whole matrix. A net that declares current_ma gets
+# ceil(current_ma / 15) paths in parallel; the declared currents of all nets
+# together may not exceed 100 mA (a supply net and its return both count).
+SWITCH_MA = 15
+MATRIX_MA = 100
+PATH_OHM = 100  # clip-to-clip path, two switches in series (bench 2026-11-23: about 108 Ohm)
+
+
+def paths_for(current_ma: int | None) -> int:
+    """Number of parallel paths for a declared current (None = signal net, 1 path)."""
+    if current_ma is None:
+        return 1
+    if type(current_ma) is not int or current_ma < 1:
+        raise HostError("BAD_ARG", "current_ma must be a positive integer (mA)")
+    if current_ma > MATRIX_MA:
+        raise HostError("CURRENT_TOO_HIGH", f"the matrix carries at most {MATRIX_MA} mA in total",
+                        current_ma=current_ma, limit_ma=MATRIX_MA)
+    return max(1, math.ceil(current_ma / SWITCH_MA))
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,11 +91,11 @@ class ControlService:
     def _result(self, *args: Any, **kwargs: Any) -> ControlResult:
         return ControlResult(*args, **kwargs, device=self._device_label)
 
-    def create(self, net_id: str, nodes: list[str]) -> ControlResult:
-        return self._write("create", net_id, nodes)
+    def create(self, net_id: str, nodes: list[str], current_ma: int | None = None) -> ControlResult:
+        return self._write("create", net_id, nodes, current_ma)
 
-    def modify(self, net_id: str, nodes: list[str]) -> ControlResult:
-        return self._write("modify", net_id, nodes)
+    def modify(self, net_id: str, nodes: list[str], current_ma: int | None = None) -> ControlResult:
+        return self._write("modify", net_id, nodes, current_ma)
 
     def delete(self, net_id: str) -> ControlResult:
         return self._write("delete", net_id)
@@ -91,7 +113,7 @@ class ControlService:
         self._blocked = False
 
     def guide_leds(self, action: str | None = None, net_id: str | None = None,
-                   nodes: list[str] | None = None) -> ControlResult:
+                   nodes: list[str] | None = None, current_ma: int | None = None) -> ControlResult:
         """One LED BATCH of the confirmed netlist's colors; no switch change, no arming.
 
         With action/net_id/nodes (same meaning as plan) the colors are those of the
@@ -114,7 +136,7 @@ class ControlService:
             if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
                 return self._result(False, "guide_leds", error=HostError(
                     "BAD_ARG", "action must be create, modify or delete"))
-            router, _, candidate, error = self._candidate(action, net_id, nodes)
+            router, _, candidate, error = self._candidate(action, net_id, nodes, current_ma)
             if error is not None:
                 return self._result(False, "guide_leds", router=router, error=error)
             source, state = "plan", candidate
@@ -184,7 +206,8 @@ class ControlService:
             "SESSION_REESTABLISH_REQUIRED", "all_open succeeded; build a new session (HELLO, arm) before further use",
         ))
 
-    def plan(self, action: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+    def plan(self, action: str, net_id: str, nodes: list[str] | None = None,
+             current_ma: int | None = None) -> ControlResult:
         """Route and compile a create/modify/delete on a copy; no device I/O, no state change."""
         if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
             return self._result(False, "plan", error=HostError(
@@ -193,7 +216,7 @@ class ControlService:
             return self._reestablish_result("plan")
         if self._blocked:
             return self._blocked_result("plan")
-        router, plan, candidate, error = self._candidate(action, net_id, nodes)
+        router, plan, candidate, error = self._candidate(action, net_id, nodes, current_ma)
         if error is not None:
             return self._result(False, "plan", router=router, error=error)
         occupied = sorted({node for net in router["nets"] for node in net["nodes"]})
@@ -203,6 +226,13 @@ class ControlService:
             "disturbed_nets": list(plan.disturbed_nets), "occupied_nodes": occupied,
             "occupancy": copy.deepcopy(router["occupancy"]),
         }
+        if action != "delete":
+            paths = paths_for(current_ma)
+            summary.update({
+                "current_ma": current_ma, "parallel_paths": paths,
+                "path_ohm_typical": round(PATH_OHM / paths),
+                "max_ma": paths * SWITCH_MA,
+            })
         return self._result(True, "plan", router=router, plan=summary)
 
     def _blocked_result(self, operation: str) -> ControlResult:
@@ -214,9 +244,16 @@ class ControlService:
             "CONTROL_BLOCKED", "acknowledge_unresolved is required before further writes",
         ))
 
-    def _candidate(self, operation: str, net_id: str, nodes: list[str] | None):
+    def _candidate(self, operation: str, net_id: str, nodes: list[str] | None,
+                   current_ma: int | None = None):
         """Return (router, plan, candidate, error); the confirmed state is never mutated."""
         router = None
+        try:
+            paths = paths_for(current_ma)
+            if operation == "delete" and current_ma is not None:
+                raise HostError("BAD_ARG", "current_ma is only for create and modify")
+        except HostError as exc:
+            return None, None, None, exc
         if operation in {"create", "modify"} and isinstance(nodes, list):
             known = self._profile.nodes
             hidden = sorted({n for n in nodes if isinstance(n, str) and n in known
@@ -232,19 +269,27 @@ class ControlService:
             if operation in {"delete", "modify"}:
                 candidate = crossbar_delete_net(candidate, net_id)
             if operation in {"create", "modify"}:
-                candidate = crossbar_create_net(candidate, net_id, nodes)
+                candidate = crossbar_create_net(candidate, net_id, nodes, parallel=paths)
+                if current_ma is not None:
+                    candidate["nets"][net_id]["current_ma"] = current_ma
+                total = sum(net.get("current_ma", 0) for net in candidate["nets"].values())
+                if total > MATRIX_MA:
+                    raise HostError("CURRENT_TOO_HIGH",
+                                    f"declared currents of all nets exceed {MATRIX_MA} mA",
+                                    total_ma=total, limit_ma=MATRIX_MA)
             router = copy.deepcopy(crossbar_query(candidate))
             plan = compile_plan(self._confirmed, candidate, self._profile, base_epoch=self._epoch)
         except JfError as exc:
             return router, None, None, exc
         return router, plan, candidate, None
 
-    def _write(self, operation: str, net_id: str, nodes: list[str] | None = None) -> ControlResult:
+    def _write(self, operation: str, net_id: str, nodes: list[str] | None = None,
+               current_ma: int | None = None) -> ControlResult:
         if self._all_opened:
             return self._reestablish_result(operation)
         if self._blocked:
             return self._blocked_result(operation)
-        router, plan, candidate, error = self._candidate(operation, net_id, nodes)
+        router, plan, candidate, error = self._candidate(operation, net_id, nodes, current_ma)
         if error is not None:
             return self._result(False, operation, router=router, error=error)
 

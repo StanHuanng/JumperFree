@@ -1,4 +1,4 @@
-"""The six Agent tools. Each takes the session first; MCP binds it once per process.
+"""The seven Agent tools. Each takes the session first; MCP binds it once per process.
 
 The Agent only names nets and nodes. It never picks crosspoints, BUS lines or
 switch registers: the router and the board firmware do that.
@@ -26,6 +26,10 @@ Never skip a step. Never invent node names: call describe_board. If a result has
 ok=false, quote error.code and stop; do not retry with changed arguments.
 SESSION_LOST means the board opened every switch (lease, fault, reset or emergency
 stop): tell the user and stop; the Host must be restarted.
+For a supply or ground net (VCC, 3V3, GND of a module) pass current_ma, the load's
+current; the Host then uses parallel paths. Signal nets need no current_ma.
+measure_voltage reads the voltage on one clip (it never changes the netlist). Use it
+to check a supply net after execute_plan, e.g. 3V3 reads about 3.3 V.
 verified=false always: a successful execute is the board's report, not a
 measurement of real electrical connection.
 """
@@ -41,7 +45,8 @@ TOOL_DESCRIPTIONS = {
     "plan_net_change": (
         "Read-only dry run of create/modify/delete for one net: routes it and returns the "
         "switch changes, affected nets and a plan_id. Changes nothing on the board. Show the "
-        "plan to the user and get a yes before guide_leds."),
+        "plan to the user and get a yes before guide_leds. For supply/ground nets pass "
+        "current_ma: the Host routes ceil(current_ma/15) BUS paths in parallel."),
     "guide_leds": (
         "Light the board LEDs. With plan_id: show the netlist that plan would produce (one "
         "color per net, other clips dark) and return each net's clips with row and column, "
@@ -54,6 +59,11 @@ TOOL_DESCRIPTIONS = {
     "all_open": (
         "Open every switch on the board and turn the LEDs off (the user's 'disconnect "
         "everything'). The session continues with an empty netlist."),
+    "measure_voltage": (
+        "Read the voltage on one clip (volts; range about -7.4..+5.5 V, input about 1 MOhm). "
+        "Uses the clip's own net path, or for a clip in no net a free BUS for the reading only; "
+        "every switch is restored and the netlist does not change. An unconnected clip reads "
+        "about 2.5 V. window_ms > 0 also returns min/max over that time (signal activity)."),
 }
 
 
@@ -78,10 +88,18 @@ TOOL_SCHEMAS = {
             "nodes": {"type": "array", "minItems": 2, "items": {"type": "string"},
                       "description": ("Exact node names from describe_board (e.g. A3, B12, SVC_GND). "
                                       "Required for create and modify; omit for delete.")},
+            "current_ma": {"type": "integer", "minimum": 1, "maximum": 100,
+                           "description": ("Supply/ground nets only: the load's continuous current in mA. "
+                                           "Omit for signal nets.")},
         }, ["action", "name"])),
         ("guide_leds", _schema({"plan_id": _PLAN_ID}, [])),
         ("execute_plan", _schema({"plan_id": _PLAN_ID}, ["plan_id"])),
         ("all_open", _schema({}, [])),
+        ("measure_voltage", _schema({
+            "node": {"type": "string", "description": "A clip name from describe_board, e.g. A3."},
+            "window_ms": {"type": "integer", "minimum": 0, "maximum": 1000,
+                          "description": "0 (default): one averaged reading. >0: also min/max over this time."},
+        }, ["node"])),
     )
 }
 
@@ -95,8 +113,8 @@ def get_state(session: AgentSession) -> dict[str, Any]:
 
 
 def plan_net_change(session: AgentSession, action: str, name: str,
-                    nodes: list[str] | None = None) -> dict[str, Any]:
-    return session.plan(action, name, nodes)
+                    nodes: list[str] | None = None, current_ma: int | None = None) -> dict[str, Any]:
+    return session.plan(action, name, nodes, current_ma)
 
 
 def guide_leds(session: AgentSession, plan_id: str | None = None) -> dict[str, Any]:
@@ -109,3 +127,7 @@ def execute_plan(session: AgentSession, plan_id: str) -> dict[str, Any]:
 
 def all_open(session: AgentSession) -> dict[str, Any]:
     return session.all_open()
+
+
+def measure_voltage(session: AgentSession, node: str, window_ms: int = 0) -> dict[str, Any]:
+    return session.measure(node, window_ms)
