@@ -19,7 +19,7 @@ from .types import PlanError, Xp
 BOARDS_DIR = Path(__file__).parent / "boards"
 DEFAULT_BOARD_DIR = BOARDS_DIR / "v01"
 CHIP_MAP = MappingProxyType({"C1": 0, "C2": 1})  # v01 A4，待实测
-_BOARD_IDS = {"v01": "v01", "mini": "v04"}  # profile id -> firmware board id in HELLO
+_BOARD_IDS = {"v01": "v01", "mini": "mini"}  # profile id -> firmware board id in HELLO
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +106,7 @@ class BoardProfile:
 
     @classmethod
     def for_board(cls, board: str) -> BoardProfile:
-        """Load the packaged profile by profile id (v01, mini) or firmware board id (v04)."""
+        """Load the packaged profile by profile id (v01, mini) or firmware board id (mini)."""
         for profile_id, wire in _BOARD_IDS.items():
             if board in (profile_id, wire):
                 return cls.load(BOARDS_DIR / profile_id)

@@ -32,12 +32,12 @@ class Geometry:
 
 
 V01 = Geometry("v01", chips=2, x_lines=8, leds=16, tags_x=8, max_reply=512)
-# JumperFree mini (v0.4 board): U301..U306 carry clips, U307 (c=6) is the service
+# JumperFree mini (PCB v0.4): U301..U306 carry clips, U307 (c=6) is the service
 # chip with only y6 TEST_SRC and y7 SVC_GND exposed by the firmware.
-V04 = Geometry("v04", chips=7, x_lines=16, leds=48, tags_x=16, max_reply=1024,
+MINI = Geometry("mini", chips=7, x_lines=16, leds=48, tags_x=16, max_reply=1024,
                restricted=MappingProxyType({6: frozenset({6, 7})}))
 
-GEOMETRIES: Mapping[str, Geometry] = MappingProxyType({g.board: g for g in (V01, V04)})
+GEOMETRIES: Mapping[str, Geometry] = MappingProxyType({g.board: g for g in (V01, MINI)})
 
 
 def geometry_for(board: str) -> Geometry:

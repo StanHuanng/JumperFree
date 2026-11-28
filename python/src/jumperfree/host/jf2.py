@@ -16,7 +16,7 @@ _MULTI = {"TXN", "SW", "LED", "FAULT", "CFG"}
 
 
 def frame_tokens(line: bytes, max_len: int = 512) -> tuple[str, ...]:
-    """严格 LF、单空格、可打印 ASCII；JF2 不接受 CRLF。请求最多 512 字节；v04 应答最多 1024。"""
+    """严格 LF、单空格、可打印 ASCII；JF2 不接受 CRLF。请求最多 512 字节；mini 应答最多 1024。"""
     if not isinstance(line, bytes) or len(line) > max_len or not line.endswith(b"\n"):
         raise HostError("BAD_FRAME", f"expected LF frame of at most {max_len} bytes")
     if not re.fullmatch(rb"[!-~]+(?: [!-~]+)*\n", line):

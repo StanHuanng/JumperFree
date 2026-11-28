@@ -338,7 +338,7 @@ class MockDevice(MockTransport):
         return f"TXN COMMIT {id_} " + " ".join(info)
 
     def _safety(self, target: Shadow) -> None:
-        """v01: X private per chip, Y shared. v04: X (BUS) shared, Y (clip) private per chip."""
+        """v01: X private per chip, Y shared. mini: X (BUS) shared, Y (clip) private per chip."""
         shared_x = self.geometry.board != "v01"
         x_owner = {}
         y_owner = {}

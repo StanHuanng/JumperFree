@@ -1,4 +1,4 @@
-"""JumperFree mini (v0.4 board) routing topology and node table.
+"""JumperFree mini (PCB v0.4) routing topology and node table.
 
 Seven CH446Q chips U301..U307. X0..X15 of all chips are wired together as
 BUS0..BUS15. Each Y line of U301..U306 is one clip (FLIP n = chip n//8, Y n%8).
@@ -8,7 +8,7 @@ are reserved: they get internal nodes so the router never uses them.
 
 Clip names follow Stan's row naming: row A = back row (far from the user, USB
 side, firmware "U"), row B = front row (near the user, firmware "D"), column
-1..24 from the left. Source: firmware/boards/v04-bringup-f103 clipmap.h
+1..24 from the left. Source: firmware/boards/mini-f103 clipmap.h
 (EDA pins of PCB v04). LED BATCH clip index = FLIP number.
 """
 
@@ -67,7 +67,7 @@ def mini_topology() -> dict[str, Any]:
         ],
         "metadata": {
             "model": "jumperfree_mini_topology",
-            "board": "JumperFree mini (v0.4 board, firmware board=v04)",
+            "board": "JumperFree mini (PCB v0.4, firmware board=mini)",
             "verified": "bench",
             "evidence": ("2026-11-22 matrix self-test 768/768 switches and BUS isolation PASS; "
                          "clip pin map checked SCH/PCB 0 diff (JumperFree_Claude/fable/v04_fw/CHECK.md)"),

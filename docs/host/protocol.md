@@ -71,4 +71,4 @@ I/O 故障通过 `OSError` 报告，HostSession 转为结构化 `TRANSPORT_ERROR
 
 独立前缀的事务、租约、故障与 MockDevice 规范见 [JF2 主机与内存设备](../../protocol/jf2.md)。JF1 字节和 HostSession 保持冻结；当前全部为软件验证，未经硬件验证。
 
-Python 主机、MockDevice 和共享向量只支持 board=v01。v0.4 主板（board=v04：7 片 CH446Q、X = BUS0..15、48 个 Clip）的拓扑由 C 核心的 v04 profile 实现，差异见 [板级 profile](../../protocol/jf2.md#板级-profile)。
+共享向量只覆盖 board=v01。Python 主机与 MockDevice 同时支持 JumperFree mini（board=mini：7 片 CH446Q、X = BUS0..15、48 个 Clip）；C 核心用 mini profile 实现它，差异见 [板级 profile](../../protocol/jf2.md#板级-profile)。

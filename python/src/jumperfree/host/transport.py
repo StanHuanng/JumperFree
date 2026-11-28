@@ -133,7 +133,7 @@ class SerialTransport:
         """JF2 专用：轮询已到达的字节，直到 LF、超长或绝对 deadline。
 
         不改写 pyserial 的 timeout：Windows 上每次改 timeout 都会重配串口并丢字节
-        （v0.4 实测撕裂应答）。返回值可含 LF 之后的字节，由 Jf2Session 逐行组帧。
+        （JumperFree mini 实测撕裂应答）。返回值可含 LF 之后的字节，由 Jf2Session 逐行组帧。
         """
         line = bytearray()
         sleep = getattr(self, "_sleep", time.sleep)

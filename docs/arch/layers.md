@@ -41,5 +41,5 @@
 不调用 `acknowledge_unresolved`。会话生命周期与工具见 [Agent tools](../agent/tools.md)。
 
 板级 geometry（`core/geometry.py`）只定线上坐标范围与应答长度：v01 为 2 芯片、X0–7、16 颗 LED；
-v04（JumperFree mini）为 7 芯片、X0–15（BUS）、48 颗 LED、U307 只开放 Y6/Y7。Clip 到交叉点的对应
+mini（JumperFree mini）为 7 芯片、X0–15（BUS）、48 颗 LED、U307 只开放 Y6/Y7。Clip 到交叉点的对应
 放在 `board/boards/<profile>/`。

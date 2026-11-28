@@ -10,7 +10,7 @@ from pathlib import Path
 
 from jumperfree.agent import INSTRUCTIONS, TOOL_SCHEMAS, AgentSession, mock_opener
 from jumperfree.agent.mcp_server import McpServer, serve
-from jumperfree.core.geometry import V04
+from jumperfree.core.geometry import MINI
 from jumperfree.host.mock_device import MockDevice
 
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -18,7 +18,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
-        self.device = MockDevice(clock=lambda: 0, geometry=V04)
+        self.device = MockDevice(clock=lambda: 0, geometry=MINI)
         self.session = AgentSession(mock_opener("mini", self.device), heartbeat_s=None)
         self.addCleanup(self.session.close)
         self.server = McpServer(self.session)
