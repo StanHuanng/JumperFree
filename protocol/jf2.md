@@ -44,6 +44,7 @@ C 核心（`firmware/src` + `firmware/include`）在编译期选择一个板级 
 | `LED BATCH` | n=0..16，clip=0..15 | n=0..48，clip=0..47（clip 号 = FLIP 号） |
 | 启动清 LED | 16 颗 | 48 颗 |
 | 响应缓冲 | 512 字节 | 1024 字节（请求帧仍最多 512 字节）；mini 主机必须接受最长 1024 字节的应答行 |
+| `MEAS`（测量） | 不支持：`UNSUPPORTED no sensing hardware`，caps 不含 meas | 支持，caps 为 `led,sw,txn,lease,meas`，见下文 [MEAS](#meas-测量-clip-电压) |
 
 两种 profile 都按下面的共同规则解析：
 
@@ -56,6 +57,17 @@ Python 主机按 HELLO 的 `board=` 选 geometry（`python/src/jumperfree/core/g
 
 C 核心的 mini 行为由 `firmware/host_test/core_tests_mini.c` 覆盖（`make -C firmware test-mini`）。
 
+### MEAS：测量 Clip 电压
+
+`MEAS clip window_ms` 读一个 Clip 上的电压，clip = 0..`JF2_CLIPS-1`（FLIP 号），window_ms = 0..1000。
+
+- 板级钩子 `Jf2Hw.measure` 可选。为 NULL 时（v01、内存后端）应答 `UNSUPPORTED no sensing hardware`，HELLO/INFO 的 caps 不含 `meas`。
+- 需要 HELLO 后的会话（否则 `SAFE_MODE`）；STAGING 中为 `BUSY transaction open`；clip 或 window 越界为 `BAD_ARG invalid clip or window`；参数个数或格式错误为 `BAD_FRAME`。
+- 应答：`MEAS clip mv=<int> min=<int> max=<int> n=<样本数> bus=<x> temp=<0|1>`。mv 是窗口内均值，min/max 是单次样本的极值；window_ms=0 时只取一次 16 点平均，三者相同。mv 可为负。
+- 路径：Clip 已在某个 net 里时，用它的 BUS（temp=0）；否则从 BUS15 往下找一条空闲 BUS，临时闭合这个 Clip 到该 BUS 的开关（temp=1）。然后闭合 U307 Y4（MEAS_A），等待 30 ms，采样，再按原样断开。所以影子、epoch、CRC 和 tag 都不变。没有空闲 BUS 时应答 `BUSY no free BUS`。
+- 前端（JumperFree mini）：Vadc = 0.2545 × Vbus + 0.5758 × VDDA，输入约 1 MΩ，量程约 −7.4..+5.5 V；VDDA 由 VREFINT 求出，未校准，误差约几个百分点。悬空的 Clip 读约 2.5 V。temp=1 的临时开关会把该 Clip 短时接到 BUS 的几 nF 电容上。
+- 命令同步执行，最长约 window_ms + 40 ms；主机对 MEAS 不重发，超时取 0.5 s + window_ms。
+
 ## 状态、会话、时间与故障
 
 启动：SAFE、空影子、epoch=0、LED 全零、无事务/缓存/HELLO，默认租约为 0。boot 是八位小写 hex。Python 的 `seed=0` 默认配合 `random.Random(seed).getrandbits(32)`；同 seed 的完整重启序列可重现。每次重启生成新值，时间从该次启动重新计算。C 自行产生 boot，向量将它视为易变字段。`reset_cause` 初始可注入 `por/iwdg/sw`。iwdg 启动锁存 WDT_RESET；活跃 HW 源在重启后仍锁存 HW_FAULT。
@@ -63,8 +75,8 @@ C 核心的 mini 行为由 `firmware/host_test/core_tests_mini.c` 覆盖（`make
 | 状态 | 命令权限 |
 | --- | --- |
 | SAFE | JF1 LED、HELLO/INFO/PING、SW STATUS/TAGS/ALLOPEN、FAULT、TXN QUERY、CFG GET、SELFTEST 0；1/2 始终 UNSUPPORTED |
-| ARMED | 以上 + LEASE、LED BATCH、TXN BEGIN；没有暂存时 ADD/COMMIT 为 TXN_UNKNOWN，ABORT 可建立 ABORTED 结果 |
-| STAGING | 以上只读/安全命令、HELLO、PING、LEASE、TXN ADD/COMMIT/ABORT/QUERY；LED BATCH / SELFTEST 0 为 BUSY；不同 id BEGIN 为 BUSY |
+| ARMED | 以上 + LEASE、LED BATCH、MEAS、TXN BEGIN；没有暂存时 ADD/COMMIT 为 TXN_UNKNOWN，ABORT 可建立 ABORTED 结果 |
+| STAGING | 以上只读/安全命令、HELLO、PING、LEASE、TXN ADD/COMMIT/ABORT/QUERY；LED BATCH / SELFTEST 0 / MEAS 为 BUSY；不同 id BEGIN 为 BUSY |
 | COMMITTING | 仅内部同步过渡，不接受流水线，不向客户端暴露 |
 
 本实现按 §3.3 的“任意状态”允许只读命令，按“HELLO 后”允许 STAGING 续租；§4.4 的 STAGING 简表不是排除这些读操作/续租的完整白名单。SAFE 中 LEASE、LED BATCH 和新切换请求返回 SAFE_MODE；历史 COMMIT/ABORT 的结果重放不执行开关，可在 SAFE 查询或重放。CFG SET 始终 UNSUPPORTED。未知子命令也 UNSUPPORTED。
@@ -82,7 +94,7 @@ HELLO 检查通过后中止未决事务并记 ABORTED，开启新会话，保留
 | 0x10 | OVERCURRENT | 保留，无硬件 |
 | 0x20 | WDT_RESET | iwdg 重启锁存 |
 
-任何故障均全断并进入 SAFE。非零掩码在下个响应尾部携带 `f=<hex>`；FAULT GET/CLEAR 自身始终含 f（包括 f=0），不会重复添加。FAULT CLEAR 清掉没有活跃源的锁存位；hw 源尚在时保留 0x4。caps 固定为 `led,sw,txn,lease`，永不含 overcurrent/probe。
+任何故障均全断并进入 SAFE。非零掩码在下个响应尾部携带 `f=<hex>`；FAULT GET/CLEAR 自身始终含 f（包括 f=0），不会重复添加。FAULT CLEAR 清掉没有活跃源的锁存位；hw 源尚在时保留 0x4。caps 为 `led,sw,txn,lease`，板级钩子提供测量时追加 `meas`（JumperFree mini）；永不含 overcurrent/probe。
 
 ## 命令与规范应答
 
@@ -106,6 +118,7 @@ HELLO 检查通过后中止未决事务并记 ABORTED，开启新会话，保留
 | `FAULT GET/CLEAR` | `FAULT GET/CLEAR f=<hex>` |
 | `SELFTEST 0` | `SELFTEST 0 result=pass` |
 | `CFG GET key` | `CFG GET key value=<十进制值>` |
+| `MEAS clip window_ms` | `MEAS clip mv=<int> min=<int> max=<int> n=<n> bus=<x> temp=<0\|1>`（仅 caps 含 meas 的板，见 [MEAS](#meas-测量-clip-电压)） |
 
 nonce 为 1..8 个 hex 字符，大小写原样回显；proto 非 2 返回 UNSUPPORTED。SELFTEST 1/2 固定返回 UNSUPPORTED（D5/A5），其他 level 返回 BAD_ARG。CFG key 只支持 brightness_cap=64、lease_default_ms=0、max_ops=256；未知 key 返回 BAD_ARG。brightness_cap 只是初始配置值，Mock 保存原始 RGB，不模拟功耗、亮度限制或故障覆盖层，JF1 原始 RGB 行为不变。
 

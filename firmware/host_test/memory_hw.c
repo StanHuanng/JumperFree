@@ -32,7 +32,7 @@ static void led(void *ctx, uint8_t clip, uint8_t r, uint8_t g, uint8_t b)
 static uint64_t now_ms(void *ctx) { return ((MemoryHw *)ctx)->now; }
 void memory_hw_init(MemoryHw *m) { memset(m,0,sizeof *m); }
 Jf2Hw memory_hw_binding(MemoryHw *m)
-{ return (Jf2Hw){m,crosspoint,all_open,led,now_ms}; }
+{ return (Jf2Hw){m,crosspoint,all_open,led,now_ms,NULL}; }
 void memory_emit(void *ctx, const uint8_t *bytes, size_t len)
 {
     MemoryHw *m=ctx;

@@ -133,6 +133,7 @@ class DeviceClient:
         self._stopped: HostError | None = None
         self._stopped_id: int | None = None
         self._stopped_changed = "no"
+        self._caps_meas = False
         self.status: DeviceStatus | None = None
 
     def _ready(self) -> None:
@@ -158,8 +159,10 @@ class DeviceClient:
                     or hello.kv.get("chips") != str(self._geometry.chips)):
                 raise HostError("BOARD_MISMATCH", "HELLO board/chip identity differs",
                                 expected=self._board_id, reported=hello.kv.get("board"))
-            if not {"sw", "txn"}.issubset(hello.kv.get("caps", "").split(",")):
+            caps = set(hello.kv.get("caps", "").split(","))
+            if not {"sw", "txn"}.issubset(caps):
                 raise HostError("CAPABILITY_MISMATCH", "device needs sw and txn capabilities")
+            self._caps_meas = "meas" in caps
             _hex(hello, "boot", 8)
             _require_armed(hello)
             config = self._session.request(("CFG", "GET", "max_ops"))
@@ -379,6 +382,33 @@ class DeviceClient:
             if not re.fullmatch(r"[0-9a-f]+", fault):
                 raise HostError("MALFORMED_RESPONSE", "invalid fault mask")
             return _number(reply, "up"), int(fault, 16)
+
+    def measure(self, clip: int, window_ms: int = 0) -> dict[str, int | bool]:
+        """Send `MEAS clip window_ms`: voltage on one clip through the board's front end.
+
+        The firmware uses the clip's own BUS, or a free BUS with one temporary clip
+        switch, and restores every switch before it answers (epoch and shadow do not
+        change). Needs the `meas` capability from HELLO. Values are in mV.
+        """
+        with self._lock:
+            self._ready()
+            if not self._caps_meas:
+                raise HostError("UNSUPPORTED", "device has no meas capability")
+            if (type(clip) is not int or not 0 <= clip < self._geometry.leds
+                    or type(window_ms) is not int or not 0 <= window_ms <= 1000):
+                raise HostError("BAD_ARG", "clip must be a clip index and window 0..1000 ms")
+            reply = self._session.request(("MEAS", str(clip), str(window_ms)))
+            values = {}
+            for key in ("mv", "min", "max"):
+                raw = reply.kv.get(key, "")
+                if not re.fullmatch(r"-?(?:0|[1-9][0-9]{0,5})", raw):
+                    raise HostError("MALFORMED_RESPONSE", "missing or invalid " + key)
+                values[key] = int(raw)
+            temp = reply.kv.get("temp")
+            if temp not in {"0", "1"}:
+                raise HostError("MALFORMED_RESPONSE", "missing or invalid temp")
+            return {"clip": clip, "mv": values["mv"], "min_mv": values["min"], "max_mv": values["max"],
+                    "samples": _number(reply, "n"), "bus": _number(reply, "bus"), "temp": temp == "1"}
 
     def all_open(self) -> None:
         """Send `SW ALLOPEN`; legal in SAFE, ARMED and STAGING.

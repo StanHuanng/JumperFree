@@ -29,6 +29,8 @@ chips, Y = one clip per chip, chip 6 = U307 limited to y 6/7, 48 LEDs). The
 differences are listed in [`protocol/jf2.md`](../protocol/jf2.md#板级-profile).
 `make test` runs both: `test-v01` (core self-tests plus the shared vectors) and
 `test-mini` (`host_test/core_tests_mini.c`; the shared vectors are v01 only).
+A board may bind the optional `Jf2Hw.measure` callback; the core then accepts
+`JF2 MEAS clip window_ms` and adds `meas` to caps (NULL: `UNSUPPORTED`).
 The JumperFree mini project
 [`boards/mini-f103`](boards/mini-f103/README.md) builds this core
 with the mini profile.

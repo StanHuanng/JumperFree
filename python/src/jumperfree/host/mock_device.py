@@ -48,6 +48,10 @@ class MockDevice(MockTransport):
         self._offset = 0
         self._rng = random.Random(seed)
         self.hw_source = False
+        # MEAS model (geometry.measure only): external voltage on a clip in mV. A clip
+        # reads its own value, else a value driven on its BUS, else OPEN_MV.
+        self.clip_mv: dict[int, int] = {}
+        self.meas_log: list[tuple[int, int]] = []
         self.reboot(reset_cause)
 
     def _now(self) -> float:
@@ -167,7 +171,8 @@ class MockDevice(MockTransport):
         raise HostError(code, message)
 
     def _info(self) -> str:
-        return (f"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips={self.geometry.chips} "
+        caps = "led,sw,txn,lease" + (",meas" if self.geometry.measure else "")
+        return (f"fw=0.1.0 proto=2 caps={caps} chips={self.geometry.chips} "
                 f"board={self.geometry.board} boot={self.boot} "
                 f"epoch={self.epoch} state={self.state} reset={self.reset_cause}")
 
@@ -254,7 +259,55 @@ class MockDevice(MockTransport):
             return "LED BATCH " + args[1]
         if cmd == "TXN" and args[0] in {"BEGIN", "ADD", "COMMIT", "ABORT"}:
             return self._transaction(args)
+        if cmd == "MEAS":
+            return self._measure(uint(args[0]), uint(args[1]))
         self._error("UNSUPPORTED", "unknown command")
+
+    OPEN_MV = 2500  # the real front end reads about 2.5 V on an open input
+
+    def _measure(self, clip: int, window: int) -> str:
+        """JF2 MEAS like the mini firmware: clip's BUS, else the highest free BUS (temp)."""
+        if not self.geometry.measure:
+            self._error("UNSUPPORTED", "no sensing hardware")
+        self._require_session()
+        if self.state == "STAGING":
+            self._error("BUSY", "transaction open")
+        if clip >= self.geometry.leds or window > 1000:
+            self._error("BAD_ARG", "invalid clip or window")
+        chip, y = divmod(clip, 8)
+        closed = self.shadow.closed
+
+        def on(c: int, x: int, yy: int) -> bool:
+            return bool(closed[c] & (1 << (x * 8 + yy)))
+
+        buses = [x for x in range(self.geometry.x_lines) if on(chip, x, y)]
+        temp = not buses
+        if temp:
+            free = [x for x in range(self.geometry.x_lines)
+                    if not any(on(c, x, yy) for c in range(self.geometry.chips) for yy in range(8))]
+            if not free:
+                self._error("BUSY", "no free BUS")
+            bus = free[-1]
+        else:
+            bus = buses[0]
+        self.meas_log.append((clip, window))
+        mv = self.clip_mv.get(clip)
+        if mv is None and not temp:
+            for c in range(self.geometry.chips):
+                for yy in range(8):
+                    if not any(on(c, x, yy) for x in buses):
+                        continue
+                    if c == self.geometry.chips - 1 and self.geometry.restricted.get(c):
+                        mv = {6: 3300, 7: 0}.get(yy, mv)  # service chip: TEST_SRC / SVC_GND
+                    elif c * 8 + yy in self.clip_mv:
+                        mv = self.clip_mv[c * 8 + yy]
+                    if mv is not None:
+                        break
+                if mv is not None:
+                    break
+        mv = self.OPEN_MV if mv is None else mv
+        samples = 1 if window == 0 else max(1, window * 8)
+        return f"MEAS {clip} mv={mv} min={mv} max={mv} n={min(samples, 65535)} bus={bus} temp={int(temp)}"
 
     def _require_session(self) -> None:
         if not self._hello or self.state == "SAFE":

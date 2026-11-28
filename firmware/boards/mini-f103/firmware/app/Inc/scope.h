@@ -5,6 +5,7 @@
 #ifndef SCOPE_H
 #define SCOPE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -12,6 +13,19 @@ extern "C" {
 #endif /* __cplusplus */
 
 #define SCOPE_NONE  0xFFFFFFFFUL
+
+/* Measurement path of one clip (also used by JF2 MEAS): the clip's BUS from the
+ * CH446Q shadow; for a clip in no net a free BUS (BUS15 first) and one
+ * temporary clip switch. Then U307 svc_y (Y4 MEAS_A, Y5 MEAS_B, Y6 PB8) on it. */
+typedef struct
+{
+  uint32_t flip;
+  uint32_t bus;
+  bool     temp;  /* clip switch closed only for this capture */
+} probe_ch_t;
+
+bool scope_attach(probe_ch_t *p, uint32_t svc_y);  /* false: no free BUS */
+void scope_detach(const probe_ch_t *p, uint32_t svc_y);
 
 /* flip_b = SCOPE_NONE for one channel; n = samples per channel (0 = max) */
 void scope_run(uint32_t flip_a, uint32_t flip_b, uint32_t rate, uint32_t n);

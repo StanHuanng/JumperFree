@@ -59,14 +59,7 @@ static bool bus_free(uint32_t x)
   return true;
 }
 
-typedef struct
-{
-  uint32_t flip;
-  uint32_t bus;
-  bool     temp;  /* clip switch closed only for this capture */
-} probe_ch_t;
-
-static bool attach(probe_ch_t *p, uint32_t svc_y)
+bool scope_attach(probe_ch_t *p, uint32_t svc_y)
 {
   p->temp = false;
   p->bus = clip_bus(p->flip);
@@ -91,7 +84,7 @@ static bool attach(probe_ch_t *p, uint32_t svc_y)
   return true;
 }
 
-static void detach(const probe_ch_t *p, uint32_t svc_y)
+void scope_detach(const probe_ch_t *p, uint32_t svc_y)
 {
   ch_write(CH_SVC, p->bus, svc_y, false);
   if (p->temp)
@@ -224,7 +217,7 @@ void la_run(uint32_t flip, char trig, uint32_t wait_ms, uint32_t win_us)
   GPIOB->CRH = (crh & ~(0xFUL << 0)) | (0x4UL << 0);
 
   probe_ch_t p = { flip, NONE, false };
-  if (!attach(&p, SVC_Y_TEST))
+  if (!scope_attach(&p, SVC_Y_TEST))
   {
     GPIOB->CRH = crh;
     out("no free BUS for the clip\r\n");
@@ -277,7 +270,7 @@ void la_run(uint32_t flip, char trig, uint32_t wait_ms, uint32_t win_us)
   uint32_t span = DWT->CYCCNT - ts0;
   __enable_irq();
 
-  detach(&p, SVC_Y_TEST);
+  scope_detach(&p, SVC_Y_TEST);
   GPIOB->BSRR = LA_PIN << 16;  /* TEST_DRV low */
   GPIOB->CRH = crh;
 
@@ -440,7 +433,7 @@ void lac_run(uint32_t flip, char trig, uint32_t wait_ms, uint32_t win_us)
   GPIOB->CRH = (crh & ~0xFFUL) | (0x4UL << 0) | (0x6UL << 4);
 
   probe_ch_t p = { flip, NONE, false };
-  if (!attach(&p, SVC_Y_TEST))
+  if (!scope_attach(&p, SVC_Y_TEST))
   {
     GPIOB->CRH = crh;
     ws2812_hw_setup();
@@ -471,7 +464,7 @@ void lac_run(uint32_t flip, char trig, uint32_t wait_ms, uint32_t win_us)
   __enable_irq();
   uint32_t level_now = ((GPIOB->IDR & LA_PIN) != 0U) ? 1U : 0U;
 
-  detach(&p, SVC_Y_TEST);
+  scope_detach(&p, SVC_Y_TEST);
   GPIOB->BSRR = LA_PIN << 16;  /* TEST_DRV low */
   GPIOB->CRH = crh;
   ws2812_hw_setup();
@@ -528,14 +521,14 @@ void scope_run(uint32_t flip_a, uint32_t flip_b, uint32_t rate, uint32_t n)
 
   probe_ch_t a = { flip_a, NONE, false };
   probe_ch_t b = { flip_b, NONE, false };
-  if (!attach(&a, SVC_Y_MEAS_A))
+  if (!scope_attach(&a, SVC_Y_MEAS_A))
   {
     out("no free BUS for clip A\r\n");
     return;
   }
-  if ((nch > 1U) && !attach(&b, SVC_Y_MEAS_B))
+  if ((nch > 1U) && !scope_attach(&b, SVC_Y_MEAS_B))
   {
-    detach(&a, SVC_Y_MEAS_A);
+    scope_detach(&a, SVC_Y_MEAS_A);
     out("no free BUS for clip B\r\n");
     return;
   }
@@ -552,10 +545,10 @@ void scope_run(uint32_t flip_a, uint32_t flip_b, uint32_t rate, uint32_t n)
   uint32_t t_real = TIM_CLK_HZ / (psc * ((TIM_CLK_HZ / rate) / psc));
   bool ok = capture(nch, rate, n * nch);
 
-  detach(&a, SVC_Y_MEAS_A);
+  scope_detach(&a, SVC_Y_MEAS_A);
   if (nch > 1U)
   {
-    detach(&b, SVC_Y_MEAS_B);
+    scope_detach(&b, SVC_Y_MEAS_B);
   }
   if (!ok)
   {
