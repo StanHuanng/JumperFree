@@ -242,11 +242,56 @@ static void leds_48(void)
     contains("JF1 SET 16 1 2 3\n","JF1 ERR CLIP_OUT_OF_RANGE");
 }
 
+/* Fake measurement front end: clip c reads 1000+c mV on BUS 15 (temporary);
+ * clips 40..47 report "no free BUS". Records the last request. */
+static unsigned meas_calls,meas_clip,meas_window;
+static bool fake_measure(void *ctx, uint8_t clip, uint16_t window, Jf2Meas *m)
+{
+    (void)ctx; ++meas_calls; meas_clip=clip; meas_window=window;
+    if (clip>=40) return false;
+    m->mv=1000+clip; m->min_mv=-3300; m->max_mv=5000; m->samples=window ? 7u : 1u;
+    m->bus=15; m->temp=true;
+    return true;
+}
+
+static void measurement(void)
+{
+    setup();
+    Jf2Hw hw=memory_hw_binding(&mem);
+    hw.measure=fake_measure;
+    CHECK(jf2_init(&dev,&hw,memory_emit,&mem,UINT32_C(0x00ab12ef),JF2_RESET_POR));
+    meas_calls=0;
+    contains("JF2 INFO\n","caps=led,sw,txn,lease,meas chips=7 board=mini");
+    exact("JF2 MEAS 3 0\n","JF2 ERR SAFE_MODE HELLO required without faults\n");
+    CHECK(meas_calls==0);
+    hello();
+    exact("JF2 MEAS 3 0\n","JF2 OK MEAS 3 mv=1003 min=-3300 max=5000 n=1 bus=15 temp=1\n");
+    CHECK(meas_calls==1 && meas_clip==3 && meas_window==0);
+    exact("JF2 MEAS 47 1000\n","JF2 ERR BUSY no free BUS\n");
+    CHECK(meas_clip==47 && meas_window==1000);
+    exact("JF2 MEAS 48 0\n","JF2 ERR BAD_ARG invalid clip or window\n");
+    exact("JF2 MEAS 0 1001\n","JF2 ERR BAD_ARG invalid clip or window\n");
+    exact("JF2 MEAS 0\n","JF2 ERR BAD_FRAME incorrect argument count\n");
+    exact("JF2 MEAS 01 0\n","JF2 ERR BAD_FRAME expected canonical unsigned integer\n");
+    CHECK(meas_calls==2);
+    begin(5,1);
+    exact("JF2 MEAS 3 0\n","JF2 ERR BUSY transaction open\n");
+    abort_txn(5);
+    CHECK(meas_calls==2);
+    /* the shadow is not touched: epoch and CRC stay those of the empty board */
+    contains("JF2 SW STATUS\n","JF2 OK SW STATUS epoch=0 crc=32c5f669");
+
+    /* without the hook (v01 boards, plain memory backend) MEAS is unsupported */
+    setup(); hello();
+    exact("JF2 MEAS 3 0\n","JF2 ERR UNSUPPORTED no sensing hardware\n");
+    contains("JF2 INFO\n","caps=led,sw,txn,lease chips=7");
+}
+
 int core_self_tests(void)
 {
     passed=failed=0;
     profile_info(); op_parsing(); service_chip_limits(); conflict_rules();
-    status_tags_format(); leds_48();
+    status_tags_format(); leds_48(); measurement();
     printf("mini core self-tests: %zu passed, %zu failed\n",passed,failed);
     printf("sizeof: Jf2Device=%zu Jf2Shadow=%zu MemoryHw=%zu (host only)\n",
            sizeof(Jf2Device),sizeof(Jf2Shadow),sizeof(MemoryHw));

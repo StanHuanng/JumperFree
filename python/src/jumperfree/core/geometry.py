@@ -23,6 +23,7 @@ class Geometry:
     max_reply: int             # longest response line incl. LF
     # Service chips: only these y lines accept switch operations.
     restricted: Mapping[int, frozenset[int]] = field(default_factory=lambda: MappingProxyType({}))
+    measure: bool = False      # firmware has JF2 MEAS (voltage on a clip)
 
     def check_point(self, chip: int, x: int, y: int) -> bool:
         if not (0 <= chip < self.chips and 0 <= x < self.x_lines and 0 <= y < 8):
@@ -35,7 +36,7 @@ V01 = Geometry("v01", chips=2, x_lines=8, leds=16, tags_x=8, max_reply=512)
 # JumperFree mini (PCB v0.4): U301..U306 carry clips, U307 (c=6) is the service
 # chip with only y6 TEST_SRC and y7 SVC_GND exposed by the firmware.
 MINI = Geometry("mini", chips=7, x_lines=16, leds=48, tags_x=16, max_reply=1024,
-               restricted=MappingProxyType({6: frozenset({6, 7})}))
+               restricted=MappingProxyType({6: frozenset({6, 7})}), measure=True)
 
 GEOMETRIES: Mapping[str, Geometry] = MappingProxyType({g.board: g for g in (V01, MINI)})
 

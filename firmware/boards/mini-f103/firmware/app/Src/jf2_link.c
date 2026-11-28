@@ -7,6 +7,9 @@
   *           LED clip n (FLIP n)          -> RGB at the clip's panel position
   *           +5V / -7V out of range       -> HW_FAULT (all open, SAFE),
   *                                           matrix held in reset
+  *           MEAS clip                    -> clip's BUS (or a free BUS with a
+  *                                           temporary clip switch) -> U307 Y4
+  *                                           -> MEAS_A -> PA0, then restored
   */
 #include <string.h>
 #include "adc.h"
@@ -15,9 +18,12 @@
 #include "clipmap.h"
 #include "jf2.h"
 #include "jf2_link.h"
+#include "scope.h"
 #include "ws2812.h"
 
 #define SUPPLY_CHECK_MS  500U
+#define MEAS_SETTLE_MS   30U     /* 1 MOhm input against a few nF of BUS */
+#define MEAS_MAX_N       65535U
 
 static Jf2Device s_dev;
 static bool s_led_dirty;
@@ -80,6 +86,49 @@ static void hw_set_led(void *ctx, uint8_t clip, uint8_t r, uint8_t g, uint8_t b)
   }
 }
 
+/* MEAS_A front end: Vadc = 0.2545 x Vbus + 0.5758 x VDDA, so the input range
+ * is about -7.4..+5.5 V. An open input reads about 2.5 V. */
+static int32_t bus_mv(uint32_t raw, int32_t vdda)
+{
+  int32_t vadc = ((int32_t)raw * vdda + 2047) / 4095;
+  return (vadc * 10000 - 5758 * vdda) / 2545;
+}
+
+static bool hw_measure(void *ctx, uint8_t clip, uint16_t window_ms, Jf2Meas *m)
+{
+  (void)ctx;
+  probe_ch_t p = { clip, 0U, false };
+  if (!ch_enabled() && !s_supply_bad)
+  {
+    ch_enable();
+  }
+  if (!scope_attach(&p, SVC_Y_MEAS_A))
+  {
+    return false;
+  }
+  adc_report_t r;
+  adc_measure(&r);  /* VDDA from VREFINT, also gives the path time to settle */
+  board_delay_ms(MEAS_SETTLE_MS);
+  uint32_t lo = 4095U, hi = 0U, sum = 0U, n = 0U;
+  uint32_t t0 = board_millis();
+  do
+  {
+    uint32_t v = adc_read(0U, (window_ms == 0U) ? 16U : 4U);
+    lo = (v < lo) ? v : lo;
+    hi = (v > hi) ? v : hi;
+    sum += v;
+    n++;
+  } while (((board_millis() - t0) < window_ms) && (n < MEAS_MAX_N));
+  scope_detach(&p, SVC_Y_MEAS_A);
+  m->mv = bus_mv((sum + n / 2U) / n, r.vdda_mv);
+  m->min_mv = bus_mv(lo, r.vdda_mv);
+  m->max_mv = bus_mv(hi, r.vdda_mv);
+  m->samples = (uint16_t)n;
+  m->bus = (uint8_t)p.bus;
+  m->temp = p.temp;
+  return true;
+}
+
 /* board_millis wraps after ~49 days; the core needs a monotonic 64-bit clock */
 static uint64_t hw_now_ms(void *ctx)
 {
@@ -132,7 +181,7 @@ static void check_supplies(void)
 
 void jf2_link_init(void)
 {
-  static const Jf2Hw hw = { NULL, hw_set_crosspoint, hw_all_open, hw_set_led, hw_now_ms };
+  static const Jf2Hw hw = { NULL, hw_set_crosspoint, hw_all_open, hw_set_led, hw_now_ms, hw_measure };
   (void)jf2_init(&s_dev, &hw, emit, NULL, boot_id(),
                  ((board_boot()->reset_flags & RCC_CSR_SFTRSTF) != 0U) ? JF2_RESET_SW : JF2_RESET_POR);
   s_supply_bad = false;

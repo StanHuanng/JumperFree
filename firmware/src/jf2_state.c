@@ -178,8 +178,9 @@ static bool require_session(Jf2Device *d)
 
 static void info(Jf2Device *d)
 {
-    jf2_append(d,"fw=0.1.0 proto=2 caps=led,sw,txn,lease chips=%u board=" JF2_BOARD " boot=%08" PRIx32
-               " epoch=%" PRIu64 " state=%s reset=%s",JF2_CHIPS,d->boot,d->epoch,mode_name(d->mode),reset_name(d->reset_cause));
+    jf2_append(d,"fw=0.1.0 proto=2 caps=led,sw,txn,lease%s chips=%u board=" JF2_BOARD " boot=%08" PRIx32
+               " epoch=%" PRIu64 " state=%s reset=%s",d->hw.measure ? ",meas" : "",JF2_CHIPS,d->boot,d->epoch,
+               mode_name(d->mode),reset_name(d->reset_cause));
 }
 
 static void result_info(Jf2Device *d, const Jf2Result *r)
@@ -414,6 +415,19 @@ bool jf2_dispatch(Jf2Device *d, const Jf2Request *r)
             d->hw.set_led(d->hw.ctx,(uint8_t)clip,d->leds[clip][0],d->leds[clip][1],d->leds[clip][2]);
         }
         jf2_append(d,"JF2 OK LED BATCH %" PRIu32,value); return true;
+    }
+    if (!strcmp(cmd,"MEAS")) {
+        uint32_t window=0;
+        (void)jf2_uint(d,sub,&value); (void)jf2_uint(d,jf2_token(r,2),&window);
+        if (!d->hw.measure) return jf2_error(d,"UNSUPPORTED","no sensing hardware");
+        if (!require_session(d)) return false;
+        if (d->mode==JF2_STAGING) return jf2_error(d,"BUSY","transaction open");
+        if (value>=JF2_CLIPS || window>1000) return jf2_error(d,"BAD_ARG","invalid clip or window");
+        Jf2Meas m={0};
+        if (!d->hw.measure(d->hw.ctx,(uint8_t)value,(uint16_t)window,&m)) return jf2_error(d,"BUSY","no free BUS");
+        jf2_append(d,"JF2 OK MEAS %" PRIu32 " mv=%" PRId32 " min=%" PRId32 " max=%" PRId32 " n=%u bus=%u temp=%u",
+                   value,m.mv,m.min_mv,m.max_mv,(unsigned)m.samples,(unsigned)m.bus,m.temp ? 1u : 0u);
+        return true;
     }
     if (!strcmp(cmd,"TXN") && (!strcmp(sub,"BEGIN") || !strcmp(sub,"ADD") || !strcmp(sub,"COMMIT") || !strcmp(sub,"ABORT") || !strcmp(sub,"QUERY")))
         return transaction(d,r);

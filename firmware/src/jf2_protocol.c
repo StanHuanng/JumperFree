@@ -141,6 +141,7 @@ static bool prevalidate(Jf2Device *d, const Jf2Request *r)
         else if (!strcmp(cmd,"PING") || !strcmp(cmd,"LEASE") || !strcmp(cmd,"SELFTEST")) {
             min=2; max=2; required=2;
         }
+        else if (!strcmp(cmd,"MEAS")) { min=3; max=3; required=6; }
     } else if (!strcmp(cmd,"TXN")) {
         if (!strcmp(sub,"BEGIN")) { min=5; max=5; required=28; }
         else if (!strcmp(sub,"ADD")) { min=5; max=512; required=12; }

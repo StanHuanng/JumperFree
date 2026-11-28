@@ -55,12 +55,12 @@ def encode_jf2(cmd_tokens: Iterable[str]) -> bytes:
         ("SW", "TAGS"): (2, 2), ("SW", "ALLOPEN"): (2, 2),
         ("FAULT", "GET"): (2, 2), ("FAULT", "CLEAR"): (2, 2),
         ("LED", "BATCH"): (3, 512), ("CFG", "GET"): (3, 3),
-        ("CFG", "SET"): (4, 4),
+        ("CFG", "SET"): (4, 4), ("MEAS",): (3, 3),
     }.get(head if tokens[0] in _MULTI else tokens[:1])
     if arity is not None and not arity[0] <= len(tokens) <= arity[1]:
         raise HostError("BAD_FRAME", "incorrect argument count")
     indices = {
-        "HELLO": (1,), "PING": (1,), "LEASE": (1,), "SELFTEST": (1,),
+        "HELLO": (1,), "PING": (1,), "LEASE": (1,), "SELFTEST": (1,), "MEAS": (1, 2),
     }.get(tokens[0], ())
     if head == ("TXN", "BEGIN"):
         indices = (2, 3, 4)

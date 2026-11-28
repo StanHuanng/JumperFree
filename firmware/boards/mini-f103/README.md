@@ -61,6 +61,8 @@ python flash_and_read.py COM4     # 运行中的固件收到 boot 命令后进�
 - 一个网络 = 一条 BUS（CH446Q 的 X，所有芯片共用，0..15）+ 一个 tag（1..15）。
 - Clip FLIPn 在芯片 n/8（U301..U306）的 Y(n%8)，操作写作 `+chip:bus:y@tag`。
 - chip 6 = U307，只开放 y6 = TEST_SRC（PB8 经 1.5 kΩ，约 3.3 V，信号级）和 y7 = SVC_GND。主机名为 `3V3` / `GND`，主机拒绝把两者放进同一网络。
+- 一个 Clip 可以同时接到几条 BUS（同一个 tag）。JumperFree Host 用它给声明了 `current_ma` 的电源网并联 BUS。
+- `JF2 MEAS clip window_ms`（`jf2_link.c` 的 `hw_measure`）：Clip 所在 BUS，或从 BUS15 往下的一条空闲 BUS 加一个临时开关 → U307 Y4 → MEAS_A → PA0。等 30 ms 后采样，再按原样断开，影子不变。路径选择与 `scope` 共用 `scope_attach` / `scope_detach`。格式见 [`protocol/jf2.md`](../../../protocol/jf2.md#meas-测量-clip-电压)。
 
 ## 与 `firmware/src` 的关系
 
@@ -70,5 +72,5 @@ python flash_and_read.py COM4     # 运行中的固件收到 boot 命令后进�
 
 - CH446Q VDD = +5 V、VEE = −7 V。+5V / −7V 不在范围内时，矩阵保持复位。
 - CH_RST（PA8 开漏）默认被上拉 = 全断。电源正常、LED 清空后才释放。
-- 单开关 ≤ 15 mA。Clip 到 Clip 约 100 Ω。矩阵只走信号，不给负载供电。
+- 单开关 ≤ 15 mA，矩阵合计 ≤ 100 mA。Clip 到 Clip 约 100 Ω（实测 108 Ω）。小负载（传感器、小 OLED）可以经并联 BUS 供电；带无线的模块要单独供电。
 - 上电顺序：先给 JumperFree 上电，再给用户电路上电；断电顺序相反。

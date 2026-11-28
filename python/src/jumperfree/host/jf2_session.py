@@ -49,6 +49,9 @@ class Jf2Session:
                         if exc.code != "TIMEOUT":
                             raise
                         response = self._resolve_commit(tokens[2])
+                elif tokens[0] == "MEAS":
+                    # The board blocks for the window plus ~40 ms of settling; never resend.
+                    response = self._exchange(tokens, frame, self.frame_timeout + 0.2 + int(tokens[2]) / 1000, 0)
                 else:
                     response = self._exchange(tokens, frame, self.frame_timeout, self.retries)
                 if tokens[:2] == ("TXN", "BEGIN"):
@@ -69,7 +72,7 @@ class Jf2Session:
             ("PING",): 1, ("LEASE",): 1, ("SELFTEST",): 1,
             ("TXN", "BEGIN"): 1, ("TXN", "ADD"): 2, ("TXN", "COMMIT"): 1,
             ("TXN", "ABORT"): 1, ("TXN", "QUERY"): 1,
-            ("CFG", "GET"): 1, ("LED", "BATCH"): 1,
+            ("CFG", "GET"): 1, ("LED", "BATCH"): 1, ("MEAS",): 1,
         }.get(cmd, 0)
         expected = tokens[cmd_len:cmd_len + echoes]
         for _ in range(retries + 1):

@@ -41,6 +41,7 @@ class _Plan:
     name: str
     nodes: list[str] | None
     version: int
+    current_ma: int | None = None
     guided: bool = False
     summary: dict[str, Any] = field(default_factory=dict)
 
@@ -200,10 +201,15 @@ class AgentSession:
                       "columns": "1..24 from the left, as the user sees the board"} if mini else None),
             "service_nodes": services,
             "capacity": {"max_nets": 15, "max_ops_per_change": profile.limits.max_ops,
-                         "note": "one net uses one BUS; each clip in a net closes one switch"},
-            "electrical": ("Each matrix path is about 100 Ohm (two switches). Signals and small currents "
-                           "only: at most 15 mA per switch. Signals must stay within -7 V..+5 V. Power the "
+                         "note": ("a signal net uses one BUS and each of its clips closes one switch; a net "
+                                  "with current_ma uses ceil(current_ma / 15) BUSes in parallel")},
+            "electrical": ("Each matrix path is about 100 Ohm (two switches). At most 15 mA per switch and "
+                           "100 mA through the whole matrix. For a supply or ground net give current_ma "
+                           "(the load's current); the Host then routes ceil(current_ma / 15) paths in "
+                           "parallel (about 100 / n Ohm). Signals must stay within -7 V..+5 V. Power the "
                            "board first, then the user circuit; power down in reverse order."),
+            "measure": ({"tool": "measure_voltage", "range_v": [-7.4, 5.5], "input": "about 1 MOhm",
+                         "open_clip_reads_v": 2.5} if profile.geometry.measure else None),
             "lease_ms": self._lease_ms, "startup_notes": list(self.startup_notes),
             "workflow": ["plan_net_change", "show the plan to the user and get a yes",
                          "guide_leds(plan_id) and tell the user each part's clips (row, column)",
@@ -213,14 +219,15 @@ class AgentSession:
     def get_state(self) -> dict[str, Any]:
         return self._locked("query", lambda: self._control.query().as_dict())
 
-    def plan(self, action: str, name: str, nodes: list[str] | None = None) -> dict[str, Any]:
+    def plan(self, action: str, name: str, nodes: list[str] | None = None,
+             current_ma: int | None = None) -> dict[str, Any]:
         def run() -> dict[str, Any]:
-            failure = _shape_error(self._label, "plan", action, name, nodes)
+            failure = _shape_error(self._label, "plan", action, name, nodes, current_ma)
             if failure is not None:
                 return failure
-            result = self._control.plan(action, name, nodes).as_dict()
+            result = self._control.plan(action, name, nodes, current_ma).as_dict()
             if result["ok"]:
-                result["plan_id"] = self._issue(action, name, nodes, result.get("plan", {}))
+                result["plan_id"] = self._issue(action, name, nodes, result.get("plan", {}), current_ma)
                 result["next"] = ("Show this plan to the user and wait for a yes. Then call "
                                   "guide_leds(plan_id) and tell the user where each part goes.")
             return result
@@ -233,7 +240,8 @@ class AgentSession:
             record = self._lookup(plan_id, "guide_leds")
             if isinstance(record, dict):
                 return record
-            result = self._control.guide_leds(record.action, record.name, record.nodes).as_dict()
+            result = self._control.guide_leds(record.action, record.name, record.nodes,
+                                              record.current_ma).as_dict()
             if result["ok"]:
                 record.guided = True
                 result["plan_id"] = plan_id
@@ -256,7 +264,8 @@ class AgentSession:
             self._plans.clear()
             operation = {"create": self._control.create, "modify": self._control.modify,
                          "delete": self._control.delete}[record.action]
-            args = (record.name,) if record.action == "delete" else (record.name, record.nodes)
+            args = ((record.name,) if record.action == "delete"
+                    else (record.name, record.nodes, record.current_ma))
             result = operation(*args).as_dict()
             result["plan_id"] = plan_id
             if result["ok"]:
@@ -264,6 +273,45 @@ class AgentSession:
                 self._control.guide_leds()
             return result
         return self._locked("execute_plan", run)
+
+    def measure(self, node: str, window_ms: int = 0) -> dict[str, Any]:
+        """Voltage on one clip (JF2 MEAS). Intent and the confirmed netlist do not change."""
+        def run() -> dict[str, Any]:
+            operation = "measure_voltage"
+            nodes = self._profile.nodes
+            if not isinstance(node, str) or node not in nodes:
+                return self._error(operation, HostError(
+                    "NODE_NOT_IN_TOPOLOGY", "unknown node; use a clip name from describe_board", node=node))
+            if nodes[node]["kind"] != "clip":
+                return self._error(operation, HostError(
+                    "NODE_NOT_MEASURABLE", "only clips can be measured", node=node))
+            if type(window_ms) is not int or not 0 <= window_ms <= 1000:
+                return self._error(operation, HostError("BAD_ARG", "window_ms must be 0..1000"))
+            if not self._client.geometry.measure:
+                return self._error(operation, HostError(
+                    "UNSUPPORTED", "this board has no measurement front end"))
+            try:
+                reading = self._client.measure(nodes[node]["flip"], window_ms)
+            except JfError as exc:
+                return self._error(operation, exc)
+            netlist = self._control.query().as_dict().get("netlist") or {}
+            net = next((item["net"] for item in netlist.get("nets", []) if node in item["nodes"]), None)
+            volts = round(reading["mv"] / 1000, 3)
+            result = {
+                "ok": True, "operation": operation, "device": self._label, "verified": False,
+                "node": node, "net": net, "volts": volts,
+                "min_volts": round(reading["min_mv"] / 1000, 3),
+                "max_volts": round(reading["max_mv"] / 1000, 3),
+                "samples": reading["samples"], "window_ms": window_ms,
+                "path": "temporary" if reading["temp"] else "net",
+                "note": ("Input about 1 MOhm, range about -7.4..+5.5 V, not calibrated (expect a few percent error). "
+                         "An unconnected clip reads about 2.5 V."),
+            }
+            if 2.35 <= volts <= 2.65:
+                result["hint"] = ("This is also what an unconnected clip reads; the value alone cannot "
+                                  "tell an open clip from a real 2.5 V.")
+            return result
+        return self._locked("measure_voltage", run)
 
     def all_open(self) -> dict[str, Any]:
         def run() -> dict[str, Any]:
@@ -291,11 +339,12 @@ class AgentSession:
         return self._locked("all_open", run)
 
     # -------------------------------------------------------------------- plans
-    def _issue(self, action: str, name: str, nodes: list[str] | None, summary: dict[str, Any]) -> str:
-        key = json.dumps([action, name, nodes, self._version], sort_keys=True)
+    def _issue(self, action: str, name: str, nodes: list[str] | None, summary: dict[str, Any],
+               current_ma: int | None = None) -> str:
+        key = json.dumps([action, name, nodes, current_ma, self._version], sort_keys=True)
         plan_id = "p-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
         self._plans[plan_id] = _Plan(action, name, None if action == "delete" else list(nodes),
-                                     self._version, summary=summary)
+                                     self._version, current_ma, summary=summary)
         return plan_id
 
     def _lookup(self, plan_id: object, operation: str) -> _Plan | dict[str, Any]:
@@ -353,7 +402,7 @@ class AgentSession:
 
 
 def _shape_error(label: str, operation: str, action: object, name: object,
-                 nodes: object) -> dict[str, Any] | None:
+                 nodes: object, current_ma: object = None) -> dict[str, Any] | None:
     error = None
     if not isinstance(action, str) or action not in {"create", "modify", "delete"}:
         error = HostError("BAD_ARG", "action must be create, modify or delete")
@@ -362,6 +411,8 @@ def _shape_error(label: str, operation: str, action: object, name: object,
     elif action != "delete" and (not isinstance(nodes, list)
                                  or not all(isinstance(node, str) for node in nodes)):
         error = HostError("BAD_ARG", "nodes must be an array of node names")
+    elif current_ma is not None and (type(current_ma) is not int or current_ma < 1):
+        error = HostError("BAD_ARG", "current_ma must be a positive integer (mA)")
     if error is None:
         return None
     return ControlResult(False, operation, error=error, device=label).as_dict()
